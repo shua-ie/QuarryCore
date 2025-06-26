@@ -31,7 +31,7 @@ jobs:
           fetch-depth: 0  # Full history for better analysis
       
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       
@@ -61,13 +61,15 @@ jobs:
         continue-on-error: true
       
       - name: Upload security reports
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: security-reports
+          name: security-reports-${{ github.run_id }}
           path: |
             bandit-report.json
             safety-report.json
+          compression-level: 6
+          retention-days: 30
 
   # ============================================================================
   # Matrix Testing Across Python Versions and OS
@@ -94,9 +96,17 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
       
       - name: Install system dependencies (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
@@ -126,23 +136,27 @@ jobs:
             --junitxml=integration-results-${{ matrix.os }}-${{ matrix.python-version }}.xml
       
       - name: Upload test results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: test-results-${{ matrix.os }}-${{ matrix.python-version }}
+          name: test-results-${{ matrix.os }}-${{ matrix.python-version }}-${{ github.run_id }}
           path: |
             test-results-*.xml
             integration-results-*.xml
             htmlcov/
             .coverage
+          compression-level: 6
+          retention-days: 30
+          include-hidden-files: true
       
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         if: matrix.test-type == 'unit' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
         with:
           file: ./coverage.xml
           flags: unittests
           name: codecov-umbrella
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   # ============================================================================
   # Performance and Load Testing
@@ -158,9 +172,17 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
       
       - name: Install dependencies
         run: |
@@ -185,12 +207,14 @@ jobs:
           pytest tests/ -m "slow" --maxfail=1
       
       - name: Upload performance results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: performance-results
+          name: performance-results-${{ github.run_id }}
           path: |
             benchmark-results.json
             performance-report.html
+          compression-level: 6
+          retention-days: 90
 
   # ============================================================================
   # Hardware-Specific Testing
@@ -208,9 +232,17 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
       
       - name: Install dependencies
         run: |
@@ -225,10 +257,12 @@ jobs:
           QUARRY_HARDWARE_PROFILE: ${{ matrix.hardware-profile }}
       
       - name: Upload hardware test results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: hardware-test-results-${{ matrix.hardware-profile }}
+          name: hardware-test-results-${{ matrix.hardware-profile }}-${{ github.run_id }}
           path: hardware-${{ matrix.hardware-profile }}-results.xml
+          compression-level: 6
+          retention-days: 30
 
   # ============================================================================
   # Security Testing
@@ -243,9 +277,17 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
       
       - name: Install dependencies
         run: |
@@ -259,12 +301,12 @@ jobs:
             --junitxml=security-test-results.xml
       
       - name: SAST with CodeQL
-        uses: github/codeql-action/init@v2
+        uses: github/codeql-action/init@v3
         with:
           languages: python
       
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v2
+        uses: github/codeql-action/analyze@v3
       
       - name: Container security scan
         if: github.event_name == 'push'
@@ -276,12 +318,14 @@ jobs:
         continue-on-error: true
       
       - name: Upload security test results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: security-test-results
+          name: security-test-results-${{ github.run_id }}
           path: |
             security-test-results.xml
             container-security-report.json
+          compression-level: 6
+          retention-days: 30
 
   # ============================================================================
   # Chaos Engineering Tests
@@ -297,9 +341,17 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
       
       - name: Install dependencies
         run: |
@@ -313,11 +365,13 @@ jobs:
             --maxfail=5
       
       - name: Upload chaos test results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: chaos-test-results
+          name: chaos-test-results-${{ github.run_id }}
           path: chaos-test-results.xml
+          compression-level: 6
+          retention-days: 30
 
   # ============================================================================
   # Documentation and Examples
@@ -332,9 +386,17 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
       
       - name: Install dependencies
         run: |
@@ -352,10 +414,12 @@ jobs:
           python scripts/test_examples.py
       
       - name: Upload documentation
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: documentation
+          name: documentation-${{ github.run_id }}
           path: docs/_build/html/
+          compression-level: 6
+          retention-days: 30
 
   # ============================================================================
   # Docker Build and Test
@@ -434,9 +498,17 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
       
       - name: Install dependencies
         run: |
@@ -470,11 +542,13 @@ jobs:
           fi
       
       - name: Upload E2E test results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: e2e-test-results
+          name: e2e-test-results-${{ github.run_id }}
           path: e2e-test-results.xml
+          compression-level: 6
+          retention-days: 30
 
   # ============================================================================
   # Release and Deployment
@@ -491,7 +565,7 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       
@@ -631,12 +705,16 @@ jobs:
     
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          pattern: "*${{ github.run_id }}"
+          merge-multiple: true
       
       - name: Generate test report
         run: |
           python scripts/generate_test_report.py \
-            --artifacts-dir . \
+            --artifacts-dir artifacts/ \
             --output test-report.html
       
       - name: Notify Slack
@@ -655,7 +733,9 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
       
       - name: Upload final report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: final-test-report
-          path: test-report.html 
+          name: final-test-report-${{ github.run_id }}
+          path: test-report.html
+          compression-level: 6
+          retention-days: 90 
