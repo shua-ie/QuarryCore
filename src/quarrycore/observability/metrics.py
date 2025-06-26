@@ -1,0 +1,295 @@
+"""
+Defines and manages Prometheus metrics for the application.
+"""
+from __future__ import annotations
+
+import asyncio
+import platform
+import threading
+import time
+from typing import TYPE_CHECKING, List, Optional, Any, Dict
+
+import psutil
+from prometheus_client import (
+    REGISTRY,
+    Counter,
+    Gauge,
+    Histogram,
+    start_http_server,
+)
+
+if TYPE_CHECKING:
+    from quarrycore.config.config import MonitoringConfig
+
+# Third-party imports with graceful fallbacks
+try:
+    import pynvml  # type: ignore[import-not-found]
+    HAS_PYNVML = True
+except ImportError:
+    pynvml = None
+    HAS_PYNVML = False
+
+# --- Metric Definitions ---
+
+# Using a 'quarrycore' prefix for all custom metrics
+METRICS: Dict[str, Any] = {
+    "documents_processed": Counter(
+        "quarrycore_documents_processed_total",
+        "Total number of documents processed by the pipeline",
+        ["pipeline_stage"],
+    ),
+    "documents_in_flight": Gauge(
+        "quarrycore_documents_in_flight",
+        "Number of documents currently being processed",
+    ),
+    "processing_duration_seconds": Histogram(
+        "quarrycore_processing_duration_seconds",
+        "Time taken to process a document through a pipeline stage",
+        ["pipeline_stage"],
+    ),
+    "quality_score": Histogram(
+        "quarrycore_quality_score",
+        "Distribution of document quality scores",
+        ["domain"],
+    ),
+    "cpu_usage_percent": Gauge(
+        "quarrycore_cpu_usage_percent",
+        "Current CPU utilization of the system",
+    ),
+    "memory_usage_percent": Gauge(
+        "quarrycore_memory_usage_percent",
+        "Current memory utilization of the system",
+    ),
+    "gpu_usage_percent": Gauge(
+        "quarrycore_gpu_usage_percent",
+        "Current GPU utilization",
+        ["gpu_id"],
+    ),
+    "gpu_memory_percent": Gauge(
+        "quarrycore_gpu_memory_percent",
+        "Current GPU memory utilization",
+        ["gpu_id"],
+    ),
+    "gpu_temperature_celsius": Gauge(
+        "quarrycore_gpu_temperature_celsius",
+        "Current GPU temperature",
+        ["gpu_id"],
+    ),
+    "resource_efficiency": Gauge(
+        "quarrycore_resource_efficiency",
+        "Resource utilization efficiency score",
+    ),
+    "system_load": Gauge(
+        "quarrycore_system_load",
+        "System load average",
+    ),
+}
+
+class GpuMonitor(threading.Thread):
+    """A thread that periodically collects GPU metrics."""
+
+    def __init__(self, interval: int = 5) -> None:
+        super().__init__(daemon=True)
+        self.interval = interval
+        self._stop_event = threading.Event()
+        self.pynvml: Optional[Any] = None
+        self.handle_count = 0
+        
+        if HAS_PYNVML and pynvml:
+            try:
+                pynvml.nvmlInit()
+                self.pynvml = pynvml
+                self.handle_count = pynvml.nvmlDeviceGetCount()
+                print(f"GPU Monitor: Found {self.handle_count} GPUs.")
+            except Exception as e:
+                self.pynvml = None
+                self.handle_count = 0
+                print(f"GPU Monitor: Failed to initialize pynvml: {e}")
+        else:
+            self.pynvml = None
+            self.handle_count = 0
+            print("GPU Monitor: pynvml not available. No GPU metrics will be collected.")
+
+    def run(self) -> None:
+        """Periodically query and update GPU metrics."""
+        if not self.pynvml:
+            return
+            
+        while not self._stop_event.is_set():
+            try:
+                for i in range(self.handle_count):
+                    handle = self.pynvml.nvmlDeviceGetHandleByIndex(i)
+                    util = self.pynvml.nvmlDeviceGetUtilizationRates(handle)
+                    mem = self.pynvml.nvmlDeviceGetMemoryInfo(handle)
+                    
+                    # Update GPU utilization metrics
+                    gpu_usage_metric = METRICS["gpu_usage_percent"]
+                    if hasattr(gpu_usage_metric, 'labels'):
+                        gpu_usage_metric.labels(gpu_id=i).set(util.gpu)
+                    
+                    gpu_memory_metric = METRICS["gpu_memory_percent"]
+                    if hasattr(gpu_memory_metric, 'labels'):
+                        gpu_memory_metric.labels(gpu_id=i).set(100 * mem.used / mem.total)
+                    
+                    gpu_temp_metric = METRICS["gpu_temperature_celsius"]
+                    if hasattr(gpu_temp_metric, 'labels'):
+                        gpu_temp_metric.labels(gpu_id=i).set(
+                            self.pynvml.nvmlDeviceGetTemperature(handle, self.pynvml.NVML_TEMPERATURE_GPU)
+                        )
+            except Exception as e:
+                print(f"GPU Monitor: Error collecting metrics: {e}")
+                
+            time.sleep(self.interval)
+
+    def stop(self) -> None:
+        """Stop the GPU monitoring thread."""
+        self._stop_event.set()
+        if self.pynvml and HAS_PYNVML:
+            try:
+                self.pynvml.nvmlShutdown()
+            except Exception as e:
+                print(f"GPU Monitor: Error during shutdown: {e}")
+
+class MetricsManager:
+    """Manages the lifecycle of metrics collection and exporting."""
+
+    def __init__(self, config: MonitoringConfig) -> None:
+        self.config = config
+        self._gpu_monitor = GpuMonitor()
+        
+        # Initialize tracking variables for resource efficiency calculation
+        self.last_cpu_usage: Optional[float] = None
+        self.last_memory_usage: Optional[float] = None
+        self.last_update_time: Optional[float] = None
+
+    def start(self) -> None:
+        """Starts the Prometheus server and GPU monitor thread."""
+        if self.config.prometheus_port:
+            print(f"Starting Prometheus metrics server on port {self.config.prometheus_port}")
+            start_http_server(self.config.prometheus_port)
+        
+        self._gpu_monitor.start()
+
+    def stop(self) -> None:
+        """Stops background monitoring threads."""
+        self._gpu_monitor.stop()
+
+    def update_system_metrics(self) -> None:
+        """Updates CPU and Memory metrics."""
+        try:
+            cpu_usage = psutil.cpu_percent()
+            memory_usage = psutil.virtual_memory().percent
+            
+            cpu_metric = METRICS["cpu_usage_percent"]
+            if hasattr(cpu_metric, 'set'):
+                cpu_metric.set(cpu_usage)
+                
+            memory_metric = METRICS["memory_usage_percent"]
+            if hasattr(memory_metric, 'set'):
+                memory_metric.set(memory_usage)
+            
+            # Update resource efficiency
+            self._update_resource_efficiency(cpu_usage, memory_usage)
+            
+        except Exception as e:
+            print(f"Error updating system metrics: {e}")
+
+    def _calculate_efficiency(self, current_cpu: float, current_memory: float) -> float:
+        """Calculate resource efficiency score based on CPU and memory usage."""
+        # Simple efficiency calculation: lower usage = higher efficiency
+        # This can be customized based on specific requirements
+        cpu_efficiency = max(0.0, 100.0 - current_cpu) / 100.0
+        memory_efficiency = max(0.0, 100.0 - current_memory) / 100.0
+        
+        # Weighted average (CPU weighted more heavily)
+        efficiency = (cpu_efficiency * 0.7) + (memory_efficiency * 0.3)
+        return min(1.0, max(0.0, efficiency))
+
+    def _update_resource_efficiency(self, current_cpu: float, current_memory: float) -> None:
+        """Update resource efficiency metrics."""
+        try:
+            # Calculate efficiency
+            efficiency = self._calculate_efficiency(current_cpu, current_memory)
+            
+            # Update efficiency metric
+            efficiency_metric = METRICS["resource_efficiency"]
+            if hasattr(efficiency_metric, 'set'):
+                efficiency_metric.set(efficiency)
+            
+            # Update system load
+            try:
+                load_avg = psutil.getloadavg()
+                system_load_metric = METRICS["system_load"]
+                if hasattr(system_load_metric, 'set'):
+                    system_load_metric.set(load_avg[0] if load_avg else 0.0)
+            except (AttributeError, OSError):
+                # getloadavg not available on all platforms
+                pass
+            
+            # Update tracking variables
+            self.last_cpu_usage = current_cpu
+            self.last_memory_usage = current_memory
+            self.last_update_time = time.time()
+            
+        except Exception as e:
+            print(f"Error updating resource efficiency: {e}")
+
+    def get_current_metrics(self) -> Dict[str, Any]:
+        """Get current metric values as a dictionary."""
+        metrics_data: Dict[str, Any] = {}
+        
+        try:
+            # System metrics
+            metrics_data["cpu_usage"] = psutil.cpu_percent()
+            metrics_data["memory_usage"] = psutil.virtual_memory().percent
+            
+            # Load average (if available)
+            try:
+                load_avg = psutil.getloadavg()
+                metrics_data["load_average"] = load_avg[0] if load_avg else 0.0
+            except (AttributeError, OSError):
+                metrics_data["load_average"] = 0.0
+            
+            # GPU metrics (if available)
+            if self._gpu_monitor.pynvml and self._gpu_monitor.handle_count > 0:
+                gpu_metrics = []
+                for i in range(self._gpu_monitor.handle_count):
+                    try:
+                        handle = self._gpu_monitor.pynvml.nvmlDeviceGetHandleByIndex(i)
+                        util = self._gpu_monitor.pynvml.nvmlDeviceGetUtilizationRates(handle)
+                        mem = self._gpu_monitor.pynvml.nvmlDeviceGetMemoryInfo(handle)
+                        
+                        gpu_metrics.append({
+                            "gpu_id": i,
+                            "usage_percent": util.gpu,
+                            "memory_percent": 100 * mem.used / mem.total,
+                            "temperature": self._gpu_monitor.pynvml.nvmlDeviceGetTemperature(
+                                handle, self._gpu_monitor.pynvml.NVML_TEMPERATURE_GPU
+                            )
+                        })
+                    except Exception as e:
+                        print(f"Error getting GPU {i} metrics: {e}")
+                
+                metrics_data["gpu_metrics"] = gpu_metrics
+            
+        except Exception as e:
+            print(f"Error collecting current metrics: {e}")
+        
+        return metrics_data
+
+# Global metrics manager instance (to be initialized with config)
+_metrics_manager: Optional[MetricsManager] = None
+
+def get_metrics_manager() -> Optional[MetricsManager]:
+    """Get the global metrics manager instance."""
+    return _metrics_manager
+
+def set_metrics_manager(manager: MetricsManager) -> None:
+    """Set the global metrics manager instance."""
+    global _metrics_manager
+    _metrics_manager = manager
+
+# A global instance for easy access from other modules
+# In a real DI system, this would be injected.
+# metrics_manager = MetricsManager(some_config)
+# METRICS["documents_processed"].labels(pipeline_stage="crawl").inc() 

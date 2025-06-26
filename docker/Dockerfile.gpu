@@ -1,0 +1,170 @@
+# ==============================================================================
+# QuarryCore Production GPU Docker Image
+# Optimized for GPU workstations with CUDA acceleration
+# ==============================================================================
+
+# Build stage
+FROM nvidia/cuda:12.1-devel-ubuntu22.04 as builder
+
+# Set build arguments
+ARG BUILDPLATFORM
+ARG TARGETPLATFORM
+ARG TARGETOS
+ARG TARGETARCH
+ARG PYTHON_VERSION=3.11
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y \
+    python${PYTHON_VERSION} \
+    python${PYTHON_VERSION}-dev \
+    python${PYTHON_VERSION}-venv \
+    python3-pip \
+    build-essential \
+    gcc \
+    g++ \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create build user
+RUN useradd --create-home --shell /bin/bash builder
+USER builder
+WORKDIR /home/builder
+
+# Set up Python virtual environment
+ENV VIRTUAL_ENV=/home/builder/venv
+RUN python${PYTHON_VERSION} -m venv $VIRTUAL_ENV
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+# Upgrade pip and install build tools
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Copy requirements first for better layer caching
+COPY --chown=builder:builder pyproject.toml README.md ./
+COPY --chown=builder:builder src/ ./src/
+
+# Install PyTorch with CUDA support first
+RUN pip install --no-cache-dir \
+    torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Install dependencies and build wheel
+RUN pip install --no-cache-dir build && \
+    python -m build --wheel && \
+    pip install --no-cache-dir dist/*.whl[gpu,performance]
+
+# ==============================================================================
+# Production stage
+FROM nvidia/cuda:12.1-runtime-ubuntu22.04 as production
+
+# Metadata
+LABEL maintainer="QuarryCore Team <team@quarrycore.dev>"
+LABEL version="0.1.0"
+LABEL description="QuarryCore AI Training Data Miner - GPU Accelerated"
+LABEL org.opencontainers.image.title="QuarryCore GPU"
+LABEL org.opencontainers.image.description="Production-grade AI training data miner with GPU acceleration"
+LABEL org.opencontainers.image.vendor="QuarryCore"
+LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.source="https://github.com/quarrycore/quarrycore"
+
+# Install Python and runtime dependencies
+ARG PYTHON_VERSION=3.11
+RUN apt-get update && apt-get install -y \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y \
+    python${PYTHON_VERSION} \
+    python3-pip \
+    # Essential runtime libraries
+    libgomp1 \
+    libopenblas0 \
+    # CUDA runtime libraries
+    libcudnn8 \
+    libcublas-12-1 \
+    libcufft-12-1 \
+    libcurand-12-1 \
+    libcusolver-12-1 \
+    libcusparse-12-1 \
+    # Networking and SSL
+    ca-certificates \
+    curl \
+    # Process monitoring
+    procps \
+    htop \
+    nvidia-smi \
+    # Cleanup
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Security hardening
+RUN groupadd --gid 1000 quarrycore && \
+    useradd --uid 1000 --gid quarrycore --shell /bin/bash --create-home quarrycore
+
+# Create application directories
+RUN mkdir -p /app/data /app/logs /app/config && \
+    chown -R quarrycore:quarrycore /app
+
+# Copy virtual environment from builder
+COPY --from=builder --chown=quarrycore:quarrycore /home/builder/venv /opt/venv
+
+# Set up environment
+ENV PATH="/opt/venv/bin:$PATH"
+ENV PYTHONPATH="/app"
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# CUDA environment
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+ENV CUDA_VISIBLE_DEVICES=all
+
+# GPU optimizations
+ENV CUDA_CACHE_PATH="/tmp/cuda_cache"
+ENV PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:512"
+
+# Performance optimizations for GPU workloads
+ENV OMP_NUM_THREADS=8
+ENV OPENBLAS_NUM_THREADS=8
+ENV MKL_NUM_THREADS=8
+
+# QuarryCore specific environment
+ENV QUARRY_STORAGE__HOT__DB_PATH="/app/data/quarrycore.db"
+ENV QUARRY_STORAGE__WARM__BASE_PATH="/app/data/parquet"
+ENV QUARRY_STORAGE__RETENTION__COLD_STORAGE_PATH="/app/data/cold"
+ENV QUARRY_MONITORING__LOG_FILE="/app/logs/quarrycore.log"
+ENV QUARRY_MONITORING__WEB_UI__HOST="0.0.0.0"
+ENV QUARRY_MONITORING__WEB_UI__PORT="8000"
+
+# GPU-specific configuration
+ENV QUARRY_CRAWLER__MAX_CONCURRENT_REQUESTS=50
+ENV QUARRY_QUALITY__NEURAL_MODELS_ENABLED=true
+ENV QUARRY_DEDUPLICATION__SEMANTIC_ENABLED=true
+ENV QUARRY_DEDUPLICATION__SEMANTIC_BATCH_SIZE=128
+
+# Switch to non-root user
+USER quarrycore
+WORKDIR /app
+
+# Copy configuration template
+COPY --chown=quarrycore:quarrycore config.example.yaml /app/config/config.yaml
+
+# GPU health check
+HEALTHCHECK --interval=30s --timeout=15s --start-period=120s --retries=3 \
+    CMD curl -f http://localhost:8000/health && nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits | head -1 || exit 1
+
+# Expose ports
+EXPOSE 8000 9090
+
+# Volume mounts for data persistence
+VOLUME ["/app/data", "/app/logs", "/app/config"]
+
+# Default command with GPU-optimized settings
+CMD ["python", "-m", "quarrycore.cli", "pipeline", "--config", "/app/config/config.yaml", "--daemon", "--gpu"]
+
+# Security scan metadata
+LABEL security.scan.enabled="true"
+LABEL security.scan.policy="strict"
+LABEL gpu.required="true"
+LABEL gpu.cuda.version="12.1" 

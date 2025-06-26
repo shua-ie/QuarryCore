@@ -1,0 +1,403 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quarrycore"
+version = "0.1.0"
+description = "Production-grade AI training data miner with adaptive hardware optimization"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Your Name", email = "josh.mcd31@gmail.com"}
+]
+maintainers = [
+    {name = "Your Name", email = "josh.mcd31@gmail.com"}
+]
+keywords = [
+    "ai", "training-data", "web-scraping", "llm", "data-mining", 
+    "machine-learning", "nlp", "gpu-acceleration"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    # Core async and HTTP (following workflow specs)
+    "httpx[http2]>=0.25.0",
+    "aiofiles>=23.0.0",
+    "uvloop>=0.19.0; sys_platform != 'win32'",  # 2-4x asyncio performance boost
+    "uvicorn[standard]>=0.24.0", # Added for web server
+    
+    # High-performance HTML parsing with Lexbor backend
+    "selectolax>=0.3.17",  # 70x faster than BeautifulSoup
+    "trafilatura>=2.0.0",  # Latest 2.x for advanced content extraction
+    "readability-lxml>=0.8.1",
+    "beautifulsoup4>=4.12.0",  # For fallback HTML parsing
+    
+    # Zero-copy data processing (core architecture requirement)
+    "polars>=0.20.3",  # Zero-copy DataFrame operations
+    "pyarrow>=15.0.0",  # Apache Arrow format support
+    "numpy>=1.24.0",
+    
+    # Core ML and embeddings (CPU baseline for deployment flexibility)
+    "sentence-transformers>=2.2.2",  # Semantic similarity - gets GPU acceleration
+    "transformers>=4.36.0",  # HuggingFace transformers ecosystem
+    "torch>=2.1.0",  # Base PyTorch (CPU) - GPU version via optional extras
+    "onnxruntime>=1.16.0",  # Model optimization and quantization
+    "scikit-learn>=1.3.0",  # Traditional ML algorithms
+    
+    # Advanced storage and compression
+    "sqlalchemy>=2.0.23",
+    "aiosqlite>=0.19.0",
+    "zstandard>=0.22.0",  # 3x better compression than gzip
+    "msgpack>=1.0.7",
+    
+    # Advanced deduplication pipeline (workflow requirement)
+    "datasketch>=1.6.4",  # MinHash LSH for near-duplicates
+    "mmh3>=4.0.0",  # Fast hashing
+    "pybloom-live>=4.0.0",  # Bloom filters for exact matches
+    "faiss-cpu>=1.7.4",  # Vector similarity search (CPU - only PyPI option)
+    "rapidfuzz>=3.0.0", # For fuzzy matching
+    
+    # Language processing and text normalization
+    "langdetect>=1.0.9",
+    "ftfy>=6.1.1",  # Text fixing
+    "unidecode>=1.3.7",
+    "charset-normalizer>=3.3.0",
+    "spacy>=3.7.0",  # Core NLP pipeline
+    
+    # Production-grade CLI and UI
+    "typer>=0.9.0",
+    "rich>=13.7.0",
+    "click>=8.1.7",
+    "fastapi>=0.104.0",  # Web API for dashboard
+    "uvicorn[standard]>=0.24.0",
+    "pyyaml>=6.0", # For loading YAML configuration
+    
+    # Configuration and structured logging (workflow requirement)
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "structlog>=23.2.0",
+    "loguru>=0.7.2",
+    
+    # Production monitoring and observability
+    "prometheus-client>=0.19.0",
+    "opentelemetry-api>=1.21.0",
+    "opentelemetry-sdk>=1.21.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.21.0",
+    
+    # Production security and authentication
+    "pyjwt[crypto]>=2.8.0",  # JWT tokens with cryptography
+    "python-jose[cryptography]>=3.3.0",  # Alternative JWT library
+    "passlib[bcrypt]>=1.7.4",  # Password hashing
+    "cryptography>=41.0.0",  # Encryption support
+    "redis[hiredis]>=5.0.0",  # For distributed rate limiting with performance boost
+    
+    # Hardware detection and system utilities
+    "psutil>=5.9.6",  # System resource monitoring
+    "gputil>=1.4.0; sys_platform == 'linux'",  # GPU detection on Linux
+    "py-cpuinfo>=9.0.0",  # CPU feature detection
+    
+    # General utilities
+    "datasets>=2.15.0", # For HuggingFace dataset format
+    "tqdm>=4.66.0",
+    "humanize>=4.8.0",
+    "tenacity>=8.2.3",  # Retry logic with exponential backoff
+    "click-plugins>=1.1.1",  # CLI extensibility
+    "watchdog>=3.0.0",  # File system monitoring for config hot-reload
+]
+
+[project.optional-dependencies]
+# GPU acceleration for high-end workstations (workflow requirement)
+# Note: GPU acceleration comes primarily from sentence-transformers + PyTorch GPU
+# FAISS GPU requires source build - see DEPLOYMENT.md for enterprise instructions
+gpu = [
+    "torch[cuda]>=2.1.0",  # CUDA-enabled PyTorch for embedding acceleration
+    "onnxruntime-gpu>=1.16.0",  # GPU inference optimization
+    "cupy-cuda12x>=12.0.0; sys_platform == 'linux'",  # GPU array operations
+    "transformers[torch]>=4.36.0",  # GPU-optimized transformers
+    # Note: faiss-gpu NOT included - requires source build for production clusters
+    # Semantic deduplication gets GPU acceleration from embeddings, CPU FAISS is fast enough
+]
+
+# Raspberry Pi optimization (workflow requirement)
+pi = [
+    "torch-audio>=2.1.0",  # Lightweight audio processing
+    "onnxruntime>=1.16.0",  # CPU-optimized inference
+    "polars[lazy]>=0.20.3",  # Memory-efficient operations
+]
+
+# Domain-specific processors (workflow requirement)
+medical = [
+    "scispacy>=0.5.4",  # Scientific/medical NLP
+    "spacy-transformers>=1.3.4",  # Transformer-based NER
+    "medspacy>=1.1.0",  # Medical text processing
+    "en-core-sci-sm @ https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.4/en_core_sci_sm-0.5.4.tar.gz",
+]
+
+legal = [
+    # Legal text processing using transformer models for high accuracy
+    # Strategy: Use Legal-BERT for entity recognition and document classification
+    #           and regex for robust citation and date parsing.
+    "spacy-transformers>=1.3.4",
+    "transformers>=4.30.0",   # For legal-bert models (e.g., nlpaueb/legal-bert-base-uncased)
+    "regex>=2023.0.0",        # For advanced legal citation pattern matching
+    "python-dateutil>=2.8.0", # For robust court and filing date parsing
+    # Note: Blackstone model would be installed separately due to licensing
+]
+
+ecommerce = [
+    "price-parser>=0.3.4",  # Price extraction
+    "currency-converter>=0.5.5",  # Multi-currency support
+    "product-classifier>=0.1.0",  # Product categorization
+]
+
+technical = [
+    "pygments>=2.17.0",  # Code syntax highlighting
+    "tree-sitter>=0.20.0",  # Advanced code parsing
+    "semver>=3.0.0",  # Version parsing
+]
+
+# Quality assessment tools
+quality = [
+    "textstat>=0.7.3",           # Lexical metrics
+    "language-tool-python>=2.7.1", # Grammar checking
+    "detoxify>=0.5.1",           # Toxicity detection
+]
+
+# High-performance extensions (workflow optimization)
+performance = [
+    "orjson>=3.9.10",  # Fast JSON processing
+    "ujson>=5.8.0",  # Ultra-fast JSON alternative
+    "lxml>=4.9.3",  # Fast XML processing
+    "cython>=3.0.0",  # Compilation for hot paths
+    "numba>=0.58.0",  # JIT compilation
+]
+
+# Development and testing
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.12.0",
+    "pytest-benchmark>=4.0.0",
+    "pytest-xdist>=3.5.0",  # Parallel testing
+    "pytest-timeout>=2.2.0", # For setting test timeouts
+    "hypothesis>=6.88.0",  # Property-based testing
+    "black>=23.11.0",
+    "isort>=5.12.0",
+    "flake8>=6.1.0",
+    "mypy>=1.7.0",
+    "ruff>=0.1.7",  # Fast linter
+    "pre-commit>=3.5.0",
+    "bandit>=1.7.5",  # Security linting
+    "pyjwt>=2.8.0",   # For testing JWT authentication
+    "bcrypt>=4.0.0",  # For testing password hashing
+]
+
+# Documentation
+docs = [
+    "sphinx>=7.2.0",
+    "sphinx-rtd-theme>=2.0.0",
+    "sphinx-autoapi>=3.0.0",
+    "myst-parser>=2.0.0",  # Markdown support
+    "sphinx-copybutton>=0.5.2",
+]
+
+# Monitoring and dashboard
+monitoring = [
+    "streamlit>=1.28.0",  # Interactive dashboard
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "plotly>=5.17.0",  # Interactive visualizations
+    "grafana-api>=1.0.3",  # Grafana integration
+    "redis>=5.0.0",  # Caching and metrics storage
+    "nvidia-ml-py>=12.535.108; sys_platform == 'linux'", # GPU monitoring
+]
+
+# Enterprise GPU deployment (requires manual FAISS-GPU build)
+enterprise-gpu = [
+    # Base GPU dependencies (available via PyPI)
+    "torch[cuda]>=2.1.0",
+    "onnxruntime-gpu>=1.16.0", 
+    "cupy-cuda12x>=12.0.0; sys_platform == 'linux'",
+    "transformers[torch]>=4.36.0",
+    # Additional enterprise-grade dependencies
+    "nvidia-ml-py>=12.0.0",  # NVIDIA Management Library
+    "pynvml>=11.5.0",  # NVIDIA GPU monitoring
+    # Note: faiss-gpu must be built from source - see enterprise deployment guide
+]
+
+# Complete installation groups
+workstation = [
+    "quarrycore[gpu,performance,monitoring]"
+]
+raspberry-pi = [
+    "quarrycore[pi,performance]"
+]
+research = [
+    "quarrycore[medical,legal,technical,gpu,quality]"
+]
+enterprise = [
+    "quarrycore[enterprise-gpu,medical,legal,ecommerce,technical,performance,monitoring,quality]"
+]
+all = [
+    "quarrycore[gpu,medical,legal,ecommerce,technical,performance,dev,docs,monitoring,quality]"
+]
+
+[project.urls]
+Homepage = "https://github.com/shua-ie/quarrycore"
+Documentation = "https://github.com/shua-ie/quarrycore/wiki"
+Repository = "https://github.com/shua-ie/quarrycore.git"
+"Bug Tracker" = "https://github.com/shue-ie/quarrycore/issues"
+
+[project.scripts]
+quarrycore = "quarrycore.cli:main"
+qc = "quarrycore.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+quarrycore = ["py.typed", "**/*.json", "**/*.yaml", "**/*.toml"]
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["quarrycore"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+
+# Note: pytest configuration moved to end of file to avoid duplication
+
+[tool.coverage.run]
+source = ["src/quarrycore"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/conftest.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
+# Ruff configuration for fast linting (modern alternative to flake8)
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "ARG", # flake8-unused-arguments
+    "SIM", # flake8-simplify
+    "TCH", # flake8-type-checking
+]
+ignore = [
+    "E501",  # Line too long (handled by black)
+    "B008",  # Do not perform function calls in argument defaults
+    "C901",  # Function is too complex
+]
+
+[tool.ruff.per-file-ignores]
+"tests/**/*" = ["ARG", "S101"]  # Allow unused args and assert in tests
+
+# Comprehensive pytest configuration for production testing
+[tool.pytest.ini_options]
+minversion = "6.0"
+testpaths = ["tests"]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests", 
+    "performance: Performance tests",
+    "security: Security tests",
+    "slow: Slow running tests",
+    "chaos: Chaos engineering tests",
+]
+addopts = [
+    "--strict-markers",
+    "--strict-config", 
+    "--verbose",
+    "-ra",
+    "--cov=src/quarrycore",
+    "--cov-report=term-missing",
+    "--cov-report=html:htmlcov",
+    "--cov-report=xml",
+    "--timeout=30",
+]
+timeout = 30
+asyncio_mode = "auto"
+
+# Hardware detection and optimization settings
+[tool.quarrycore]
+# Hardware detection preferences
+hardware_detection = true
+auto_optimize = true
+
+# Performance profiles
+[tool.quarrycore.profiles]
+raspberry_pi = {max_workers = 2, batch_size = 50, gpu_enabled = false}
+workstation = {max_workers = "auto", batch_size = 1000, gpu_enabled = true}
+server = {max_workers = 16, batch_size = 2000, gpu_enabled = true}
+
+[tool.hypothesis]
+# Suppress health check warnings for test fixtures
+suppress_health_check = ["function_scoped_fixture"]
+# Configure for faster test execution
+max_examples = 10
+deadline = 5000 

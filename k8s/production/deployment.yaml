@@ -1,0 +1,484 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quarrycore
+  namespace: quarrycore-prod
+  labels:
+    app: quarrycore
+    version: v0.1.0
+    component: main
+    tier: application
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: quarrycore
+      component: main
+  template:
+    metadata:
+      labels:
+        app: quarrycore
+        component: main
+        version: v0.1.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: quarrycore
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: quarrycore
+        image: quarrycore/quarrycore:latest-cpu
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: QUARRY_MONITORING__ENABLED
+          value: "true"
+        - name: QUARRY_MONITORING__PROMETHEUS_PORT
+          value: "9090"
+        - name: QUARRY_MONITORING__WEB_UI__HOST
+          value: "0.0.0.0"
+        - name: QUARRY_MONITORING__WEB_UI__PORT
+          value: "8000"
+        - name: QUARRY_STORAGE__HOT__DB_PATH
+          value: "/app/data/quarrycore.db"
+        - name: QUARRY_STORAGE__WARM__BASE_PATH
+          value: "/app/data/parquet"
+        - name: QUARRY_STORAGE__RETENTION__COLD_STORAGE_PATH
+          value: "/app/data/cold"
+        - name: QUARRY_MONITORING__LOG_FILE
+          value: "/app/logs/quarrycore.log"
+        - name: QUARRY_CRAWLER__MAX_CONCURRENT_REQUESTS
+          value: "20"
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+            ephemeral-storage: "10Gi"
+          limits:
+            memory: "8Gi"
+            cpu: "4000m"
+            ephemeral-storage: "20Gi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 10
+        volumeMounts:
+        - name: data-storage
+          mountPath: /app/data
+        - name: log-storage
+          mountPath: /app/logs
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: data-storage
+        persistentVolumeClaim:
+          claimName: quarrycore-data
+      - name: log-storage
+        persistentVolumeClaim:
+          claimName: quarrycore-logs
+      - name: config
+        configMap:
+          name: quarrycore-config
+      - name: tmp
+        emptyDir:
+          sizeLimit: 1Gi
+      nodeSelector:
+        kubernetes.io/arch: amd64
+        node-type: compute
+      tolerations:
+      - key: "quarrycore.io/dedicated"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - quarrycore
+              topologyKey: kubernetes.io/hostname
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quarrycore-gpu
+  namespace: quarrycore-prod
+  labels:
+    app: quarrycore-gpu
+    version: v0.1.0
+    component: gpu-worker
+    tier: application
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: quarrycore-gpu
+      component: gpu-worker
+  template:
+    metadata:
+      labels:
+        app: quarrycore-gpu
+        component: gpu-worker
+        version: v0.1.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: quarrycore
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: quarrycore-gpu
+        image: quarrycore/quarrycore:latest-gpu
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: "all"
+        - name: NVIDIA_DRIVER_CAPABILITIES
+          value: "compute,utility"
+        - name: QUARRY_MONITORING__ENABLED
+          value: "true"
+        - name: QUARRY_QUALITY__NEURAL_MODELS_ENABLED
+          value: "true"
+        - name: QUARRY_DEDUPLICATION__SEMANTIC_ENABLED
+          value: "true"
+        - name: QUARRY_DEDUPLICATION__SEMANTIC_BATCH_SIZE
+          value: "128"
+        - name: QUARRY_CRAWLER__MAX_CONCURRENT_REQUESTS
+          value: "50"
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        resources:
+          requests:
+            memory: "8Gi"
+            cpu: "2000m"
+            nvidia.com/gpu: 1
+            ephemeral-storage: "20Gi"
+          limits:
+            memory: "32Gi"
+            cpu: "8000m"
+            nvidia.com/gpu: 1
+            ephemeral-storage: "50Gi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 15
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          timeoutSeconds: 10
+          failureThreshold: 15
+        volumeMounts:
+        - name: data-storage
+          mountPath: /app/data
+        - name: log-storage
+          mountPath: /app/logs
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+        - name: gpu-cache
+          mountPath: /tmp/cuda_cache
+      volumes:
+      - name: data-storage
+        persistentVolumeClaim:
+          claimName: quarrycore-data
+      - name: log-storage
+        persistentVolumeClaim:
+          claimName: quarrycore-logs
+      - name: config
+        configMap:
+          name: quarrycore-config
+      - name: tmp
+        emptyDir:
+          sizeLimit: 2Gi
+      - name: gpu-cache
+        emptyDir:
+          sizeLimit: 5Gi
+      nodeSelector:
+        kubernetes.io/arch: amd64
+        accelerator: nvidia-tesla-v100
+      tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Exists"
+        effect: "NoSchedule"
+      - key: "quarrycore.io/gpu-dedicated"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - quarrycore-gpu
+              topologyKey: kubernetes.io/hostname
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quarrycore
+  namespace: quarrycore-prod
+  labels:
+    app: quarrycore
+    component: main
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+spec:
+  type: LoadBalancer
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    protocol: TCP
+  - name: https
+    port: 443
+    targetPort: http
+    protocol: TCP
+  selector:
+    app: quarrycore
+    component: main
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quarrycore-metrics
+  namespace: quarrycore-prod
+  labels:
+    app: quarrycore
+    component: metrics
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+spec:
+  type: ClusterIP
+  ports:
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  selector:
+    app: quarrycore
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quarrycore-gpu-metrics
+  namespace: quarrycore-prod
+  labels:
+    app: quarrycore-gpu
+    component: gpu-metrics
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+spec:
+  type: ClusterIP
+  ports:
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  selector:
+    app: quarrycore-gpu
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: quarrycore-hpa
+  namespace: quarrycore-prod
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: quarrycore
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Pods
+    pods:
+      metric:
+        name: quarrycore_queue_depth
+      target:
+        type: AverageValue
+        averageValue: "10"
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+      - type: Pods
+        value: 4
+        periodSeconds: 15
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+      selectPolicy: Min
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: quarrycore-gpu-hpa
+  namespace: quarrycore-prod
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: quarrycore-gpu
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 60
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Pods
+    pods:
+      metric:
+        name: nvidia_gpu_utilization_percent
+      target:
+        type: AverageValue
+        averageValue: "80"
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 600
+      policies:
+      - type: Pods
+        value: 1
+        periodSeconds: 60
+      selectPolicy: Min
+    scaleDown:
+      stabilizationWindowSeconds: 900
+      policies:
+      - type: Pods
+        value: 1
+        periodSeconds: 180
+      selectPolicy: Min 

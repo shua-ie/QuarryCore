@@ -1,0 +1,214 @@
+# QuarryCore Configuration Example
+# This file demonstrates the adaptive hardware optimization features
+# Copy to config.yaml and customize for your environment
+
+# Hardware Detection and Optimization (Workflow Requirement)
+hardware:
+  # Automatic hardware detection and optimization
+  auto_detect: true
+  
+  # Force specific hardware profile (raspberry_pi, workstation, server)
+  # Leave null for auto-detection
+  profile: null
+  
+  # GPU Configuration
+  gpu:
+    enabled: auto  # auto, true, false
+    memory_limit: "auto"  # e.g., "8GB" or auto for 80% of available
+    batch_size_multiplier: 2.0  # Increase batch size when GPU available
+  
+  # CPU Configuration  
+  cpu:
+    max_workers: auto  # auto, or specific number
+    use_all_cores: false  # Reserve cores for system
+    
+  # Memory Management
+  memory:
+    max_usage_percent: 80  # Maximum memory usage percentage
+    enable_swapping: false  # Disable for Raspberry Pi
+    cache_size: "auto"  # Memory cache size
+
+# High-Performance Crawler Settings (Following Workflow Specs)
+crawler:
+  # Async Configuration (2-4x performance with uvloop)
+  async_backend: "uvloop"  # uvloop (Linux/Mac) or asyncio
+  
+  # HTTP/2 and Connection Pooling
+  http:
+    http2: true
+    max_connections: 100
+    max_keepalive_connections: 20
+    keepalive_expiry: 5.0
+    
+  # Adaptive Rate Limiting
+  rate_limiting:
+    adaptive: true
+    max_requests_per_second: 10
+    burst_allowance: 5
+    backoff_factor: 2.0
+    
+  # Circuit Breaker Pattern
+  circuit_breaker:
+    failure_threshold: 5
+    recovery_timeout: 30
+    
+  # Request Configuration
+  requests:
+    timeout: 30.0
+    retry_attempts: 3
+    user_agent_rotation: true
+    respect_robots_txt: true
+
+# Content Extraction Pipeline (70x faster than BeautifulSoup)
+extractor:
+  # Primary: selectolax with Lexbor backend
+  primary_parser: "selectolax"
+  
+  # Fallback chain for robustness
+  fallback_parsers: ["trafilatura", "readability"]
+  
+  # Content Quality Filters
+  quality:
+    min_content_length: 100
+    min_word_count: 50
+    remove_boilerplate: true
+    
+  # Language Processing
+  language:
+    detection: true
+    normalization: true
+    encoding_detection: true
+
+# GPU-Accelerated Deduplication (Workflow Requirement)
+deduplication:
+  # Multi-level strategy from workflow
+  strategy: "hybrid"  # bloom, minhash, semantic, hybrid
+  
+  # Level 1: Bloom Filter (O(1) lookup)
+  bloom_filter:
+    capacity: 1000000
+    error_rate: 0.001
+    
+  # Level 2: MinHash LSH (Jaccard similarity)
+  minhash:
+    num_perm: 128
+    threshold: 0.8
+    
+  # Level 3: Semantic similarity (GPU-accelerated)
+  semantic:
+    model: "all-MiniLM-L6-v2"
+    batch_size: 1000
+    similarity_threshold: 0.95
+    use_gpu: auto
+
+# Quality Assessment (Workflow Requirement)
+quality:
+  # Multi-level validation
+  validation_levels: ["syntactic", "semantic", "factual"]
+  
+  # Quality Metrics
+  metrics:
+    flesch_kincaid: true
+    lexical_diversity: true
+    information_entropy: true
+    
+  # Scoring Thresholds
+  thresholds:
+    min_quality_score: 0.7
+    min_readability: 30
+    max_duplicate_ratio: 0.1
+
+# Hybrid Storage System (SQLite + Parquet + Zstandard)
+storage:
+  # Storage Backend
+  backend: "hybrid"  # sqlite, parquet, hybrid
+  
+  # Compression (3x better than gzip)
+  compression: "zstd"
+  compression_level: 3
+  
+  # Partitioning
+  partition_by: ["domain", "date"]
+  max_partition_size: "1GB"
+  
+  # Caching
+  cache:
+    enabled: true
+    size: "1GB"
+    ttl: 3600
+
+# Dataset Construction (Training Data Optimization)
+dataset:
+  # Format Configuration
+  formats: ["jsonl", "parquet", "huggingface"]
+  
+  # Sampling Strategy
+  sampling:
+    strategy: "curriculum"  # random, balanced, curriculum
+    max_samples: null
+    
+  # Token-aware Processing
+  tokenization:
+    model: "gpt2"
+    max_length: 2048
+    overlap: 128
+    
+  # Export Settings
+  export:
+    batch_size: 10000
+    streaming: true
+    validation: true
+
+# Domain-Specific Processors (Workflow Requirement)
+domains:
+  medical:
+    enabled: true
+    models: ["en_core_sci_sm"]
+    extract_entities: true
+    umls_linking: false
+    
+  legal:
+    enabled: true
+    citation_parsing: true
+    jurisdiction_detection: true
+    
+  ecommerce:
+    enabled: true
+    price_extraction: true
+    currency_conversion: true
+    
+  technical:
+    enabled: true
+    code_extraction: true
+    dependency_parsing: true
+
+# Monitoring and Observability (Production-Grade)
+monitoring:
+  # Prometheus Metrics
+  prometheus:
+    enabled: true
+    port: 9090
+    
+  # Structured Logging
+  logging:
+    level: "INFO"
+    format: "json"
+    structured: true
+    
+  # Performance Tracking
+  performance:
+    track_memory: true
+    track_gpu: auto
+    sample_rate: 0.1
+    
+  # Dashboard
+  dashboard:
+    enabled: false
+    port: 8080
+    
+# Development and Debug Settings
+debug:
+  enabled: false
+  profile: false
+  memory_tracking: false
+  save_intermediate: false 

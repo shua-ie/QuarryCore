@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QuarryCore Real-Time Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f4f6f9; color: #333; margin: 0; padding: 20px; }
+        .dashboard { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; }
+        .chart-container { background-color: #fff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); padding: 20px; }
+        h1, h2 { color: #1a253c; }
+        h1 { text-align: center; margin-bottom: 30px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>QuarryCore Real-Time Dashboard</h1>
+        </header>
+        <main>
+            <div class="grid">
+                <div class="card">
+                    <h3>CPU Usage</h3>
+                    <div id="cpu-gauge" class="gauge"></div>
+                </div>
+                <div class="card">
+                    <h3>Memory Usage</h3>
+                    <div id="memory-gauge" class="gauge"></div>
+                </div>
+                <div class="card">
+                    <h3>GPU Usage</h3>
+                    <div id="gpu-gauge" class="gauge"></div>
+                </div>
+                 <div class="card">
+                    <h3>GPU Memory</h3>
+                    <div id="gpu-memory-gauge" class="gauge"></div>
+                </div>
+                <div class="card metric">
+                    <h3>Documents In-Flight</h3>
+                    <p id="docs-inflight-val">0</p>
+                </div>
+                <div class="card metric">
+                    <h3>Total Processed</h3>
+                    <p id="docs-processed-val">0</p>
+                </div>
+                <div class="card metric">
+                    <h3>Docs / Minute</h3>
+                    <p id="docs-per-min-val">0.0</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div class="dashboard">
+        <div class="chart-container" id="cpu-chart-container">
+            <h2>CPU Utilization (%)</h2>
+            <div id="cpuChart"></div>
+        </div>
+        <div class="chart-container" id="mem-chart-container">
+            <h2>Memory Utilization (%)</h2>
+            <div id="memChart"></div>
+        </div>
+        <div class="chart-container" id="gpu-chart-container">
+            <h2>GPU Utilization (%)</h2>
+            <div id="gpuChart"></div>
+        </div>
+        <div class="chart-container" id="gpu-mem-chart-container">
+            <h2>GPU Memory (%)</h2>
+            <div id="gpuMemChart"></div>
+        </div>
+        <div class="chart-container" id="docs-chart-container">
+            <h2>Documents In Flight</h2>
+            <div id="docsChart"></div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/raphael/2.3.0/raphael.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/justgage/1.6.1/justgage.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', (event) => {
+            const createGauge = (id, title) => new JustGage({
+                id: id,
+                value: 0,
+                min: 0,
+                max: 100,
+                title: title,
+                label: '%',
+                levelColors: ['#4CAF50', '#FFC107', '#F44336'],
+                valueFontColor: 'white',
+                titleFontColor: 'white',
+                labelFontColor: 'white'
+            });
+
+            const cpuGauge = createGauge('cpu-gauge', 'CPU Usage');
+            const memGauge = createGauge('memory-gauge', 'Memory Usage');
+            const gpuGauge = createGauge('gpu-gauge', 'GPU Usage');
+            const gpuMemGauge = createGauge('gpu-memory-gauge', 'GPU Memory');
+
+            const connect = () => {
+                const ws_protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const ws = new WebSocket(`${ws_protocol}//${window.location.host}/ws/metrics`);
+
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    
+                    // Update gauges
+                    cpuGauge.refresh(data.cpu_usage);
+                    memGauge.refresh(data.memory_usage);
+                    gpuGauge.refresh(data.gpu_usage);
+                    gpuMemGauge.refresh(data.gpu_memory_usage);
+
+                    // Update other metrics
+                    document.getElementById('docs-inflight-val').textContent = data.documents_in_flight;
+                    document.getElementById('docs-processed-val').textContent = data.total_documents_processed;
+                    document.getElementById('docs-per-min-val').textContent = data.docs_per_minute.toFixed(1);
+                };
+
+                ws.onclose = (e) => {
+                    console.log('Metrics socket closed. Reconnecting in 1 second.', e.reason);
+                    setTimeout(() => {
+                        connect();
+                    }, 1000);
+                };
+
+                ws.onerror = (err) => {
+                    console.error('Metrics socket encountered error: ', err.message, 'Closing socket');
+                    ws.close();
+                };
+            }
+
+            connect();
+        });
+    </script>
+</body>
+</html> 

@@ -1,0 +1,127 @@
+# ==============================================================================
+# QuarryCore Production CPU Docker Image
+# Optimized for production deployment with security hardening and minimal size
+# ==============================================================================
+
+# Build stage
+FROM python:3.11-slim as builder
+
+# Set build arguments
+ARG BUILDPLATFORM
+ARG TARGETPLATFORM
+ARG TARGETOS
+ARG TARGETARCH
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    gcc \
+    g++ \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create build user
+RUN useradd --create-home --shell /bin/bash builder
+USER builder
+WORKDIR /home/builder
+
+# Set up Python virtual environment
+ENV VIRTUAL_ENV=/home/builder/venv
+RUN python -m venv $VIRTUAL_ENV
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+# Upgrade pip and install build tools
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Copy requirements first for better layer caching
+COPY --chown=builder:builder pyproject.toml README.md ./
+COPY --chown=builder:builder src/ ./src/
+
+# Install dependencies and build wheel
+RUN pip install --no-cache-dir build && \
+    python -m build --wheel && \
+    pip install --no-cache-dir dist/*.whl[performance]
+
+# ==============================================================================
+# Production stage
+FROM python:3.11-slim as production
+
+# Metadata
+LABEL maintainer="QuarryCore Team <team@quarrycore.dev>"
+LABEL version="0.1.0"
+LABEL description="QuarryCore AI Training Data Miner - CPU Optimized"
+LABEL org.opencontainers.image.title="QuarryCore CPU"
+LABEL org.opencontainers.image.description="Production-grade AI training data miner"
+LABEL org.opencontainers.image.vendor="QuarryCore"
+LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.source="https://github.com/quarrycore/quarrycore"
+
+# Install runtime dependencies only
+RUN apt-get update && apt-get install -y \
+    # Essential runtime libraries
+    libgomp1 \
+    libopenblas0 \
+    # Networking and SSL
+    ca-certificates \
+    curl \
+    # Process monitoring
+    procps \
+    # Cleanup
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Security hardening
+RUN groupadd --gid 1000 quarrycore && \
+    useradd --uid 1000 --gid quarrycore --shell /bin/bash --create-home quarrycore
+
+# Create application directories
+RUN mkdir -p /app/data /app/logs /app/config && \
+    chown -R quarrycore:quarrycore /app
+
+# Copy virtual environment from builder
+COPY --from=builder --chown=quarrycore:quarrycore /home/builder/venv /opt/venv
+
+# Set up environment
+ENV PATH="/opt/venv/bin:$PATH"
+ENV PYTHONPATH="/app"
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Performance optimizations
+ENV OMP_NUM_THREADS=1
+ENV OPENBLAS_NUM_THREADS=1
+ENV MKL_NUM_THREADS=1
+ENV NUMEXPR_NUM_THREADS=1
+
+# QuarryCore specific environment
+ENV QUARRY_STORAGE__HOT__DB_PATH="/app/data/quarrycore.db"
+ENV QUARRY_STORAGE__WARM__BASE_PATH="/app/data/parquet"
+ENV QUARRY_STORAGE__RETENTION__COLD_STORAGE_PATH="/app/data/cold"
+ENV QUARRY_MONITORING__LOG_FILE="/app/logs/quarrycore.log"
+ENV QUARRY_MONITORING__WEB_UI__HOST="0.0.0.0"
+ENV QUARRY_MONITORING__WEB_UI__PORT="8000"
+
+# Switch to non-root user
+USER quarrycore
+WORKDIR /app
+
+# Copy configuration template
+COPY --chown=quarrycore:quarrycore config.example.yaml /app/config/config.yaml
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Expose ports
+EXPOSE 8000 9090
+
+# Volume mounts for data persistence
+VOLUME ["/app/data", "/app/logs", "/app/config"]
+
+# Default command
+CMD ["python", "-m", "quarrycore.cli", "pipeline", "--config", "/app/config/config.yaml", "--daemon"]
+
+# Security scan metadata
+LABEL security.scan.enabled="true"
+LABEL security.scan.policy="strict" 
