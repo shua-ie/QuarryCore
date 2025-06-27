@@ -17,7 +17,6 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-
 from quarrycore.container import DependencyContainer
 from quarrycore.monitoring.business_metrics import get_business_metrics
 from quarrycore.pipeline import Pipeline, ProcessingResult, ProcessingStatus

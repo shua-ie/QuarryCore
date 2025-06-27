@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 import threading
 from pathlib import Path
-from typing import Any, ClassVar, Literal, cast
+from typing import Any, ClassVar, List, Literal, Optional, cast
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError, validator
@@ -32,35 +32,54 @@ class RateLimiterConfig(BaseModel):
 
 
 class CrawlerConfig(BaseModel):
-    user_agent: str = "QuarryCore/0.1 (AI Data Collector; +http://your-project-website.com)"
-    max_concurrent_requests: int = 10
-    request_delay_ms: int = 100
-    timeout_seconds: int = 30
-    circuit_breaker: CircuitBreakerConfig = Field(default_factory=CircuitBreakerConfig)
-    rate_limiter: RateLimiterConfig = Field(default_factory=RateLimiterConfig)
-    max_depth: int = 3
-    max_pages_per_domain: int = 1000
+    """Crawler configuration."""
+
+    path: Path = Field(default_factory=lambda: Path.home() / ".quarrycore" / "crawler")
+    timeout: float = Field(default=30.0, description="HTTP request timeout in seconds.")
+    retries: int = Field(default=3, description="Number of retry attempts for failed requests.")
+    user_agent: str = Field(
+        default="Mozilla/5.0 (compatible; QuarryCore/1.0; +https://github.com/quarrycore)",
+        description="User-Agent string for HTTP requests.",
+    )
+    respect_robots: bool = Field(default=True, description="Whether to respect robots.txt.")
+    concurrent_requests: int = Field(default=10, description="Max concurrent HTTP requests.")
+    rate_limit: float = Field(default=1.0, description="Requests per second per domain.")
+
+    @validator("path", pre=True, always=True)  # type: ignore[pydantic-validator]
+    # TODO: Migrate to Pydantic V2 @field_validator
+    def create_path(cls, v: str | Path) -> str:
+        path = Path(v)
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)
 
 
 class SQLiteConfig(BaseModel):
     """Configuration for SQLite hot storage."""
 
-    db_path: str = Field(default="./data/quarrycore.db", description="Path to the SQLite database file.")
+    db_path: Path = Field(
+        default_factory=lambda: Path.home() / ".quarrycore" / "data.db",
+        description="SQLite database file path",
+    )
     pool_size: int = Field(default=10, description="Size of the connection pool.")
     wal_mode: bool = Field(default=True, description="Enable Write-Ahead Logging for higher concurrency.")
     fts_version: Literal["fts5"] = Field(default="fts5", description="Full-Text Search module to use.")
 
-    @validator("db_path", pre=True, always=True)
-    def create_parent_dir(cls, v: str | Path) -> str:
-        path = Path(v)
+    @validator("db_path", pre=True, always=True)  # type: ignore[pydantic-validator]
+    # TODO: Migrate to Pydantic V2 @field_validator
+    def ensure_db_directory(cls, v: Any) -> Path:
+        """Ensure database directory exists."""
+        path = Path(v) if not isinstance(v, Path) else v
         path.parent.mkdir(parents=True, exist_ok=True)
-        return str(path)
+        return path
 
 
 class ParquetConfig(BaseModel):
     """Configuration for Parquet warm storage."""
 
-    base_path: str = Field(default="./data/parquet_store", description="Base path for Parquet files.")
+    base_path: Path = Field(
+        default_factory=lambda: Path.home() / ".quarrycore" / "parquet",
+        description="Base directory for Parquet files",
+    )
     compression: Literal["snappy", "gzip", "brotli", "zstd"] = Field(
         default="snappy", description="Compression codec for Parquet files."
     )
@@ -68,12 +87,15 @@ class ParquetConfig(BaseModel):
         default_factory=lambda: ["domain", "date"],
         description="Fields to partition data by.",
     )
+    row_group_size: int = Field(50000, description="Target row group size")
 
-    @validator("base_path", pre=True, always=True)
-    def create_path(cls, v: str | Path) -> str:
-        path = Path(v)
+    @validator("base_path", pre=True, always=True)  # type: ignore[pydantic-validator]
+    # TODO: Migrate to Pydantic V2 @field_validator
+    def ensure_parquet_directory(cls, v: Any) -> Path:
+        """Ensure Parquet directory exists."""
+        path = Path(v) if not isinstance(v, Path) else v
         path.mkdir(parents=True, exist_ok=True)
-        return str(path)
+        return path
 
 
 class RetentionConfig(BaseModel):
@@ -83,16 +105,17 @@ class RetentionConfig(BaseModel):
         default=90,
         description="Days after which to move warm data to cold storage. None to disable.",
     )
-    cold_storage_path: str = Field(
-        default="./data/cold_store",
-        description="Path for Zstandard-compressed archives.",
-    )
+    cold_storage_path: Optional[Path] = Field(None, description="Path to cold storage for archived data")
 
-    @validator("cold_storage_path", pre=True, always=True)
-    def create_path(cls, v: str | Path) -> str:
-        path = Path(v)
+    @validator("cold_storage_path", pre=True, always=True)  # type: ignore[pydantic-validator]
+    # TODO: Migrate to Pydantic V2 @field_validator
+    def ensure_cold_storage_directory(cls, v: Any) -> Optional[Path]:
+        """Ensure cold storage directory exists if specified."""
+        if v is None:
+            return None
+        path = Path(v) if not isinstance(v, Path) else v
         path.mkdir(parents=True, exist_ok=True)
-        return str(path)
+        return path
 
 
 class BackupConfig(BaseModel):
@@ -264,18 +287,20 @@ class ExportConfig(BaseModel):
 
 
 class DatasetConfig(BaseModel):
-    """Configuration for the intelligent dataset construction pipeline."""
+    """Dataset configuration."""
 
-    name: str = Field(default="quarrycore_dataset", description="Name of the dataset.")
-    max_documents: int | None = Field(
-        default=100000,
-        description="Maximum number of documents to process for the dataset.",
-    )
+    output_path: Path = Field(default_factory=lambda: Path.home() / ".quarrycore" / "datasets")
+    formats: list[str] = Field(default=["jsonl", "parquet"], description="Output formats to generate.")
+    compression: str | None = Field(default="gzip", description="Compression algorithm to use.")
+    shard_size: int = Field(default=1_000_000, description="Maximum records per shard.")
+    include_metadata: bool = Field(default=True, description="Include metadata in dataset output.")
 
-    chunking: ChunkingConfig = Field(default_factory=ChunkingConfig)
-    sampling: SamplingConfig = Field(default_factory=SamplingConfig)
-    formatting: FormattingConfig = Field(default_factory=FormattingConfig)
-    export: ExportConfig = Field(default_factory=ExportConfig)
+    @validator("output_path", pre=True, always=True)  # type: ignore[pydantic-validator]
+    # TODO: Migrate to Pydantic V2 @field_validator
+    def create_path(cls, v: str | Path) -> str:
+        path = Path(v)
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)
 
 
 class DomainConfig(BaseModel):

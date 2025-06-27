@@ -96,6 +96,28 @@ async def create_dataset():
 asyncio.run(create_dataset())
 ```
 
+### Environment Configuration
+
+QuarryCore supports configuration via environment variables for production deployments:
+
+```bash
+# Pipeline checkpointing (AC-06)
+export CHECKPOINT_INTERVAL=60.0          # Checkpoint save interval (seconds)
+export CHECKPOINT_DIR=/app/checkpoints   # Checkpoint storage directory
+
+# Domain failure backpressure
+export DOMAIN_FAILURE_THRESHOLD=5        # Max failures per domain before backoff
+export DOMAIN_FAILURE_WINDOW=60.0        # Failure tracking window (seconds)
+export DOMAIN_BACKOFF_DURATION=120.0     # Backoff duration (seconds)
+
+# Dead letter queue
+export DEAD_LETTER_DB_PATH=/app/dead_letter.db  # Failed URL storage
+
+# Run with environment configuration
+python -m quarrycore.cli process urls.txt
+```
+```
+
 ---
 
 ## 🎨 Features

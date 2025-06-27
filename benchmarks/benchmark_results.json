@@ -1,0 +1,38 @@
+{
+  "duration_seconds": 5.835623741149902,
+  "total_urls": 1000,
+  "processed_count": 0,
+  "failed_count": 210,
+  "throughput_urls_per_second": 0.0,
+  "avg_time_per_url_ms": 0,
+  "stage_stats": {
+    "crawl": {
+      "count": 204,
+      "avg_duration": 0.0006227703655467314,
+      "min_duration": 0.00030350685119628906,
+      "max_duration": 0.0025436878204345703,
+      "total_duration": 0.1270451545715332
+    },
+    "extract": {
+      "count": 204,
+      "avg_duration": 0.000570067003661511,
+      "min_duration": 0.0002377033233642578,
+      "max_duration": 0.0353245735168457,
+      "total_duration": 0.11629366874694824
+    },
+    "metadata": {
+      "count": 204,
+      "avg_duration": 2.9112778457940794e-05,
+      "min_duration": 9.775161743164062e-06,
+      "max_duration": 0.0006620883941650391,
+      "total_duration": 0.005939006805419922
+    },
+    "deduplicate": {
+      "count": 204,
+      "avg_duration": 2.849102020263672e-05,
+      "min_duration": 8.106231689453125e-06,
+      "max_duration": 0.002082347869873047,
+      "total_duration": 0.005812168121337891
+    }
+  }
+}

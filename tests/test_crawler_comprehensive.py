@@ -17,7 +17,6 @@ import httpx
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
-
 from quarrycore.crawler import AdaptiveCrawler, CircuitBreaker, DomainRateLimiter, RobotsCache, UserAgentRotator
 from quarrycore.protocols import ProcessingStatus
 

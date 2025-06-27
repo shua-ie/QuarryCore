@@ -49,7 +49,7 @@ class TracingManager:
             resource = Resource.create(
                 {
                     "service.name": service_name,
-                    "service.version": "1.0.0",
+                    "service.version": "0.1.0",
                 }
             )
 
@@ -194,9 +194,7 @@ _tracing_manager: Optional[TracingManager] = None
 
 
 def init_tracing(
-    service_name: str = "quarrycore",
-    otlp_endpoint: Optional[str] = None,
-    enabled: bool = True,
+    service_name: str = "quarrycore", otlp_endpoint: Optional[str] = None, enabled: bool = True
 ) -> TracingManager:
     """Initialize global tracing."""
     global _tracing_manager

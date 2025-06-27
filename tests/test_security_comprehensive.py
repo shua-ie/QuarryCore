@@ -16,7 +16,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
-
 from quarrycore.config import ParquetConfig, SQLiteConfig
 from quarrycore.extractor import CascadeExtractor
 from quarrycore.extractor.cascade_extractor import ExtractionConfig

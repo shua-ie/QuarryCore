@@ -8,10 +8,12 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
     strategy:
       matrix:
+        os: [ubuntu-latest, windows-latest]
         python-version: ["3.11", "3.12"]
+    
+    runs-on: ${{ matrix.os }}
     
     env:
       QUARRY_TEST_MODE: "1"
@@ -57,7 +59,53 @@ jobs:
       env:
         QUARRY_TEST_MODE: "1"
       run: |
-        pytest --cov=src/quarrycore --cov-report=xml --cov-report=html
+        python -m pytest tests/ \
+          --cov=src/quarrycore \
+          --cov-report=xml \
+          --cov-report=term-missing \
+          --cov-report=html \
+          --timeout=60 \
+          -v \
+          -k "not slow" \
+          --ignore=tests/e2e/
+    
+    - name: Check pipeline.py coverage
+      env:
+        QUARRY_TEST_MODE: "1"
+      run: |
+        coverage xml -i
+        coverage report --include="src/quarrycore/pipeline.py" --fail-under=90
+    
+    - name: Check dead_letter.py coverage  
+      env:
+        QUARRY_TEST_MODE: "1"
+      run: |
+        coverage report --include="src/quarrycore/recovery/dead_letter.py" --fail-under=90
+    
+    - name: Check critical file coverage
+      env:
+        QUARRY_TEST_MODE: "1"
+      run: |
+        coverage report --include="src/quarrycore/pipeline.py" --fail-under=90
+        coverage report --include="src/quarrycore/recovery/dead_letter.py" --fail-under=90
+    
+    - name: Enforce coverage requirements for critical files
+      env:
+        QUARRY_TEST_MODE: "1"
+      run: |
+        # Check coverage for pipeline.py (must be ≥90%)
+        coverage report --include="src/quarrycore/pipeline.py" --fail-under=90 || {
+          echo "❌ Pipeline coverage below 90% requirement"
+          exit 1
+        }
+        
+        # Check coverage for dead_letter.py (must be ≥90%)
+        coverage report --include="src/quarrycore/recovery/dead_letter.py" --fail-under=90 || {
+          echo "❌ Dead letter queue coverage below 90% requirement"  
+          exit 1
+        }
+        
+        echo "✅ Coverage requirements met for critical pipeline components"
     
     - name: Upload coverage to Codecov
       if: ${{ !env.ACT }}
@@ -77,6 +125,18 @@ jobs:
       run: |
         pip install bandit
         bandit -r src/ -ll || true
+
+    - name: Run benchmark
+      env:
+        QUARRY_TEST_MODE: "1"
+      run: |
+        python benchmarks/profile_1k_urls.py
+
+    - name: Check benchmark retention
+      env:
+        QUARRY_TEST_MODE: "1"
+      run: |
+        python benchmarks/compare.py 95
 
   build:
     needs: test
@@ -111,7 +171,7 @@ jobs:
         name: dist-${{ github.run_id }}
         path: dist/
         compression-level: 6
-        retention-days: 30
+        retention-days: 30 
 
     - name: Artifacts upload skipped (local simulation)
       if: ${{ env.ACT }}

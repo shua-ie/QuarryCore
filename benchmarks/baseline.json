@@ -1,0 +1,52 @@
+{
+  "duration_seconds": 20.0,
+  "total_urls": 1000,
+  "processed_count": 1000,
+  "failed_count": 0,
+  "throughput_urls_per_second": 50.0,
+  "avg_time_per_url_ms": 20.0,
+  "stage_stats": {
+    "crawl": {
+      "count": 1000,
+      "avg_duration": 0.005,
+      "min_duration": 0.001,
+      "max_duration": 0.02,
+      "total_duration": 5.0
+    },
+    "extract": {
+      "count": 1000,
+      "avg_duration": 0.003,
+      "min_duration": 0.001,
+      "max_duration": 0.01,
+      "total_duration": 3.0
+    },
+    "metadata": {
+      "count": 1000,
+      "avg_duration": 0.002,
+      "min_duration": 0.001,
+      "max_duration": 0.005,
+      "total_duration": 2.0
+    },
+    "deduplicate": {
+      "count": 1000,
+      "avg_duration": 0.002,
+      "min_duration": 0.001,
+      "max_duration": 0.005,
+      "total_duration": 2.0
+    },
+    "quality": {
+      "count": 1000,
+      "avg_duration": 0.004,
+      "min_duration": 0.002,
+      "max_duration": 0.01,
+      "total_duration": 4.0
+    },
+    "storage": {
+      "count": 1000,
+      "avg_duration": 0.004,
+      "min_duration": 0.002,
+      "max_duration": 0.01,
+      "total_duration": 4.0
+    }
+  }
+} 
