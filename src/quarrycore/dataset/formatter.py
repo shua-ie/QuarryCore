@@ -1,6 +1,7 @@
 """
 Transforms text chunks into specific training formats.
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, List
@@ -30,14 +31,12 @@ class Formatter:
             return [{"text": chunk} for chunk in chunks]
         else:
             # Placeholder for conversation or other formats
-            raise NotImplementedError(
-                f"Format type '{self.config.format_type}' is not yet supported."
-            )
+            raise NotImplementedError(f"Format type '{self.config.format_type}' is not yet supported.")
 
     def _to_instruction_format(self, text: str) -> Dict[str, str]:
         """
         Creates a synthetic instruction-response pair from a text chunk.
-        
+
         This is a simple implementation. More advanced versions could use another
         LLM to generate more diverse and realistic instructions.
         """
@@ -53,4 +52,4 @@ class Formatter:
             "instruction": instruction,
             "response": response,
             "text": formatted_text,
-        } 
+        }

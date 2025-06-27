@@ -7,7 +7,7 @@ for enterprise deployments.
 
 from .headers import SecurityHeadersMiddleware
 from .rate_limiter import ProductionRateLimiter, RateLimitMiddleware
-from .validation import InputValidator, validate_url, validate_file_upload
+from .validation import InputValidator, validate_file_upload, validate_url
 
 __all__ = [
     "SecurityHeadersMiddleware",
@@ -16,4 +16,4 @@ __all__ = [
     "InputValidator",
     "validate_url",
     "validate_file_upload",
-] 
+]

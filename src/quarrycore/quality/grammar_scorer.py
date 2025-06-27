@@ -21,9 +21,10 @@ class GrammarScorer:
         self._tool: Optional[object] = None
         self._language = language
         self._fallback_mode = False
-        
+
         try:
             import language_tool_python  # type: ignore
+
             self._tool = language_tool_python.LanguageTool(language)
             logger.info("LanguageTool initialized successfully")
         except (ImportError, RuntimeError, Exception) as e:
@@ -60,23 +61,23 @@ class GrammarScorer:
             return
 
         text = content.text
-        
+
         try:
             # language-tool-python's check is CPU-bound
-            if self._tool and hasattr(self._tool, 'check'):
+            if self._tool and hasattr(self._tool, "check"):
                 matches = await asyncio.to_thread(self._tool.check, text)  # type: ignore
             else:
                 matches = []
-            
+
             error_count = len(matches)
-            
+
             # Simple scoring: 1 is perfect, 0 is bad.
             # Penalize based on errors per 100 words.
             errors_per_100_words = (error_count / content.word_count) * 100
-            
+
             # Cap penalty at 1.0
             grammar_score = max(0.0, 1.0 - (errors_per_100_words / 10.0))
-            
+
             score.grammar_score = grammar_score
             score.quality_factors["grammar_score"] = grammar_score
             score.quality_factors["grammar_errors"] = float(error_count)
@@ -91,57 +92,57 @@ class GrammarScorer:
     def _heuristic_grammar_score(self, text: str) -> float:
         """
         Simple heuristic-based grammar scoring when LanguageTool is unavailable.
-        
+
         Checks for:
         - Basic punctuation patterns
         - Sentence structure
         - Common grammar indicators
         """
         score = 1.0
-        
+
         # Check for basic sentence structure
-        sentences = text.split('.')
+        sentences = text.split(".")
         for sentence in sentences:
             sentence = sentence.strip()
             if not sentence:
                 continue
-                
+
             # Penalize sentences without capital letters at start
             if sentence and not sentence[0].isupper():
                 score -= 0.05
-                
+
             # Check for very short or very long sentences
             words = sentence.split()
             if len(words) < 3 or len(words) > 50:
                 score -= 0.05
-        
+
         # Check for common grammar issues (simplified)
         # Double spaces
-        if '  ' in text:
+        if "  " in text:
             score -= 0.1
-            
+
         # Missing space after punctuation
         import re
-        if re.search(r'[,.!?][a-zA-Z]', text):
+
+        if re.search(r"[,.!?][a-zA-Z]", text):
             score -= 0.1
-            
+
         # Multiple punctuation
-        if re.search(r'[.!?]{2,}', text):
+        if re.search(r"[.!?]{2,}", text):
             score -= 0.05
-            
+
         # Check grammar using language_tool_python if available
-        if self._tool and hasattr(self._tool, 'check'):
+        if self._tool and hasattr(self._tool, "check"):
             try:
                 matches = self._tool.check(text)  # type: ignore
                 grammar_errors = len(matches)
-                
+
                 # Basic grammar score based on error density
                 error_density = grammar_errors / max(1, len(text.split()))
-                grammar_score = max(0.0, 1.0 - (error_density * 10))
-            
+                max(0.0, 1.0 - (error_density * 10))
+
             except Exception as e:
                 logger.warning(f"Grammar check error: {e}")
-                grammar_score = 0.5  # Neutral score on error
-        
+
         # Ensure score stays in valid range
-        return max(0.0, min(1.0, score)) 
+        return max(0.0, min(1.0, score))

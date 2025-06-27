@@ -27,6 +27,9 @@ MANIFEST
 *.manifest
 *.spec
 
+# Local development tools
+bin/act
+
 # Virtual environments
 .env
 .venv
@@ -85,7 +88,7 @@ temp/
 # Data and storage directories
 data/
 datasets/
-storage/
+/storage/
 cache/
 .cache/
 crawl_data/

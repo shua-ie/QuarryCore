@@ -1,6 +1,7 @@
 """
 Computes and reports analytics on the generated dataset.
 """
+
 from __future__ import annotations
 
 from collections import Counter
@@ -60,7 +61,7 @@ class Analytics:
             "quality_distribution": self._get_quality_distribution(source_docs),
         }
         return report
-    
+
     def _get_token_counts(self, dataset: List[Dict[str, Any]]) -> List[int]:
         """Calculates token counts for each record in the dataset."""
         # We assume the main content is in the 'text' field of the formatted record
@@ -78,20 +79,16 @@ class Analytics:
             vocab.update(tokens)
         return vocab
 
-    def _get_domain_distribution(
-        self, source_docs: List[Tuple[ContentMetadata, QualityScore]]
-    ) -> Dict[str, int]:
+    def _get_domain_distribution(self, source_docs: List[Tuple[ContentMetadata, QualityScore]]) -> Dict[str, int]:
         """Calculates the distribution of content domains."""
         counts = Counter(doc.domain_type.value for doc, score in source_docs)
         return dict(counts)
-    
-    def _get_quality_distribution(
-        self, source_docs: List[Tuple[ContentMetadata, QualityScore]]
-    ) -> Dict[str, float]:
+
+    def _get_quality_distribution(self, source_docs: List[Tuple[ContentMetadata, QualityScore]]) -> Dict[str, float]:
         """Calculates the average quality scores of the source documents."""
         if not source_docs:
             return {}
-        
+
         scores = [score.overall_score for doc, score in source_docs]
         return {
             "mean": float(np.mean(scores)),
@@ -103,6 +100,7 @@ class Analytics:
     def pretty_print_report(self, report: Dict[str, Any]) -> None:
         """Prints the analytics report in a readable format."""
         import json
+
         print("\n--- Dataset Analytics Report ---")
         print(json.dumps(report, indent=2))
-        print("------------------------------\n") 
+        print("------------------------------\n")

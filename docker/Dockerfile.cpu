@@ -84,9 +84,10 @@ COPY --from=builder --chown=quarrycore:quarrycore /home/builder/venv /opt/venv
 
 # Set up environment
 ENV PATH="/opt/venv/bin:$PATH"
-ENV PYTHONPATH="/app"
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+# Add src to Python path for development/testing scenarios
+ENV PYTHONPATH="/app/src:/app:$PYTHONPATH"
 
 # Performance optimizations
 ENV OMP_NUM_THREADS=1

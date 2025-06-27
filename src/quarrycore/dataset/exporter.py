@@ -1,17 +1,19 @@
 """
 Handles exporting the final dataset to various formats.
 """
+
 from __future__ import annotations
 
 import json
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable
 
 try:
     import pyarrow as pa  # type: ignore[import-not-found]
     import pyarrow.parquet as pq  # type: ignore[import-not-found]
     from datasets import Dataset  # type: ignore[import-not-found]
+
     HAS_ARROW = True
     HAS_DATASETS = True
 except ImportError:
@@ -61,10 +63,10 @@ class ParquetExporter(BaseExporter):
             if writer is None:
                 table = pa.Table.from_pylist([item])
                 writer = pq.ParquetWriter(output_path / "data.parquet", table.schema)
-            
+
             table = pa.Table.from_pylist([item])
             writer.write_table(table)
-        
+
         if writer:
             writer.close()
         print("Parquet export complete.")
@@ -75,10 +77,10 @@ class HuggingFaceExporter(BaseExporter):
 
     def export(self, data: Iterable[Dict[str, Any]], output_path: Path) -> None:
         print(f"Creating HuggingFace dataset at {output_path}...")
-        
+
         # The 'datasets' library is very efficient at handling this
         dataset = Dataset.from_generator(lambda: (yield from data))
-        
+
         dataset.save_to_disk(str(output_path))
         print("HuggingFace dataset saved to disk.")
 
@@ -98,4 +100,4 @@ def get_exporter(format_name: str, config: ExportConfig) -> BaseExporter:
     elif format_name == "huggingface":
         return HuggingFaceExporter(config)
     else:
-        raise ValueError(f"Unknown exporter format: {format_name}") 
+        raise ValueError(f"Unknown exporter format: {format_name}")

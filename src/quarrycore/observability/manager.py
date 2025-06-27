@@ -1,20 +1,21 @@
 """
 Central manager for the observability and monitoring system.
 """
+
 from __future__ import annotations
 
-import asyncio
 import threading
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, AsyncContextManager
+from typing import TYPE_CHECKING, Any, AsyncContextManager, AsyncIterator, Dict
 from uuid import UUID
 
 import structlog
 
 from quarrycore.protocols import ObservabilityProtocol
+from quarrycore.web.main import run_web_server
+
 from .logging import configure_logging
 from .metrics import METRICS, MetricsManager
-from quarrycore.web.main import run_web_server
 
 if TYPE_CHECKING:
     from quarrycore.config.config import MonitoringConfig
@@ -37,14 +38,14 @@ class ObservabilityManager(ObservabilityProtocol):
         """Enter the async context manager."""
         if not self.config.enabled:
             return self
-        
+
         if not self._is_running:
             # Configure logging
             configure_logging(self.config)
-            
+
             # Start metrics manager (synchronous)
             self.metrics_manager.start()
-            
+
             # Start web server if enabled
             if self.config.web_ui.enabled:
                 self._web_server_thread = threading.Thread(
@@ -53,12 +54,12 @@ class ObservabilityManager(ObservabilityProtocol):
                     daemon=True,
                 )
                 self._web_server_thread.start()
-            
+
             self._is_running = True
             self.logger.info("Observability manager started")
-        
+
         return self
-    
+
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Exit the async context manager."""
         if self._is_running:
@@ -78,7 +79,7 @@ class ObservabilityManager(ObservabilityProtocol):
         if self._is_running:
             yield
             return
-            
+
         configure_logging(self.config)
         self.metrics_manager.start()
 
@@ -89,10 +90,10 @@ class ObservabilityManager(ObservabilityProtocol):
                 daemon=True,
             )
             self._web_server_thread.start()
-        
+
         self._is_running = True
         self.logger.info("Observability manager started.")
-        
+
         try:
             yield
         finally:
@@ -102,7 +103,7 @@ class ObservabilityManager(ObservabilityProtocol):
         """Shuts down all monitoring services."""
         if not self._is_running:
             return
-            
+
         self.metrics_manager.stop()
         # The web server thread is a daemon, so it will exit with the main app.
         # For a more graceful shutdown, we'd need to use uvicorn's programmatic API.
@@ -115,9 +116,7 @@ class ObservabilityManager(ObservabilityProtocol):
         metrics: PerformanceMetrics,
         correlation_id: UUID | None = None,
     ) -> None:
-        METRICS["processing_duration_seconds"].labels(pipeline_stage=component).observe(  # type: ignore
-            metrics.total_duration_ms / 1000
-        )
+        METRICS["processing_duration_seconds"].labels(pipeline_stage=component).observe(metrics.total_duration_ms / 1000)  # type: ignore
         self.logger.info(
             "performance_metric",
             component=component,
@@ -139,7 +138,7 @@ class ObservabilityManager(ObservabilityProtocol):
             severity=error.severity.value,
             correlation_id=str(correlation_id) if correlation_id else None,
         )
-    
+
     # --- Other protocol methods ---
     async def get_system_health(self) -> Dict[str, Any]:
         """Get comprehensive system health status."""
@@ -150,7 +149,7 @@ class ObservabilityManager(ObservabilityProtocol):
             "metrics_collected": True,
             "uptime_seconds": 0,  # Would need to track start time
         }
-    
+
     async def get_performance_report(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
         """Generate performance analysis report."""
         return {
@@ -158,17 +157,19 @@ class ObservabilityManager(ObservabilityProtocol):
             "metrics_available": self._is_running,
             "time_range": "not_implemented",
         }
-    
+
     async def export_prometheus_metrics(self) -> str:
         """Export metrics in Prometheus format."""
-        if hasattr(self.metrics_manager, 'registry'):
+        if hasattr(self.metrics_manager, "registry"):
             from prometheus_client import generate_latest
-            return generate_latest(self.metrics_manager.registry).decode('utf-8')
+
+            return generate_latest(self.metrics_manager.registry).decode("utf-8")
         return "# No metrics available\n"
-    
+
     async def create_alert(self, *args: Any, **kwargs: Any) -> UUID:
         """Create monitoring alert with automatic actions."""
         from uuid import uuid4
+
         alert_id = uuid4()
         self.logger.info("Alert created", alert_id=str(alert_id))
-        return alert_id 
+        return alert_id

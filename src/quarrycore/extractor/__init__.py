@@ -3,7 +3,7 @@ QuarryCore Content Extraction Module - Multi-Strategy Cascade Extractor
 
 This module provides sophisticated content extraction with a 4-tier cascade approach:
 1. Primary: Trafilatura with precision optimization (90% F1 score)
-2. Secondary: selectolax with Lexbor backend (70x faster than BeautifulSoup)  
+2. Secondary: selectolax with Lexbor backend (70x faster than BeautifulSoup)
 3. Tertiary: LLM-assisted extraction for complex layouts
 4. Fallback: Heuristic DOM-based extraction
 
@@ -17,27 +17,16 @@ Features:
 """
 
 from .cascade_extractor import CascadeExtractor
-from .content_processors import (
-    TextProcessor,
-    TableProcessor, 
-    CodeProcessor,
-    ImageProcessor,
-    LinkProcessor,
-)
-from .domain_extractors import (
-    MedicalExtractor,
-    LegalExtractor,
-    EcommerceExtractor,
-    TechnicalExtractor,
-)
-from .language_detector import LanguageDetector
 from .confidence_scorer import ConfidenceScorer
+from .content_processors import CodeProcessor, ImageProcessor, LinkProcessor, TableProcessor, TextProcessor
+from .domain_extractors import EcommerceExtractor, LegalExtractor, MedicalExtractor, TechnicalExtractor
+from .language_detector import LanguageDetector
 
 __all__ = [
     "CascadeExtractor",
     "TextProcessor",
     "TableProcessor",
-    "CodeProcessor", 
+    "CodeProcessor",
     "ImageProcessor",
     "LinkProcessor",
     "MedicalExtractor",
@@ -46,4 +35,4 @@ __all__ = [
     "TechnicalExtractor",
     "LanguageDetector",
     "ConfidenceScorer",
-] 
+]

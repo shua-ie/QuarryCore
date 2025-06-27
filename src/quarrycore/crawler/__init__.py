@@ -25,8 +25,8 @@ from .user_agents import UserAgentRotator
 
 __all__ = [
     "AdaptiveCrawler",
-    "CircuitBreaker", 
+    "CircuitBreaker",
     "DomainRateLimiter",
     "RobotsCache",
     "UserAgentRotator",
-] 
+]

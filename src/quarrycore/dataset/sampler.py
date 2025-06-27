@@ -1,13 +1,12 @@
 """
 Implements curriculum learning sampling strategies.
 """
+
 from __future__ import annotations
 
 import random
 from collections import defaultdict
 from typing import List, Tuple
-
-import numpy as np
 
 from quarrycore.config.config import SamplingConfig
 from quarrycore.protocols import ContentMetadata, QualityScore
@@ -57,9 +56,7 @@ class Sampler:
 
         # 2. Perform rejection sampling within each stratum
         selected_docs = []
-        domain_balance = self.config.domain_balance or {
-            domain: 1.0 / len(by_domain) for domain in by_domain
-        }
+        domain_balance = self.config.domain_balance or {domain: 1.0 / len(by_domain) for domain in by_domain}
 
         for domain, proportion in domain_balance.items():
             if domain not in by_domain:
@@ -69,17 +66,15 @@ class Sampler:
             stratum_candidates = by_domain[domain]
             if not stratum_candidates:
                 continue
-            
+
             # Rejection sampling
-            stratum_selected = self._rejection_sample(
-                stratum_candidates, stratum_size
-            )
+            stratum_selected = self._rejection_sample(stratum_candidates, stratum_size)
             selected_docs.extend(stratum_selected)
 
         # 3. Sort by difficulty (quality score)
         # Lower quality scores are considered "easier" for the curriculum
         selected_docs.sort(key=lambda item: item[1].overall_score)
-        
+
         return selected_docs
 
     def _rejection_sample(
@@ -95,16 +90,16 @@ class Sampler:
 
         selected = []
         factor = int(self.config.rejection_sampling_factor)
-        
+
         for _ in range(target_size):
             # Draw N candidates and pick the best one
             sample_group = random.sample(candidates, k=min(factor, len(candidates)))
-            
+
             best_in_group = max(sample_group, key=lambda item: item[1].overall_score)
             selected.append(best_in_group)
-            
+
             # Remove the selected item to prevent re-sampling
             # This is inefficient for large lists, but fine for this purpose
             candidates.remove(best_in_group)
 
-        return selected 
+        return selected

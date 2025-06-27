@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from .constructor import DatasetConstructor
-from .chunker import Chunker
-from .sampler import Sampler
-from .formatter import Formatter
 from .analytics import Analytics
+from .chunker import Chunker
+from .constructor import DatasetConstructor
+from .formatter import Formatter
+from .sampler import Sampler
 
 __all__ = [
     "DatasetConstructor",
@@ -14,4 +14,4 @@ __all__ = [
     "Sampler",
     "Formatter",
     "Analytics",
-] 
+]

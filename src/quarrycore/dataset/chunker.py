@@ -1,6 +1,7 @@
 """
 Performs token-aware chunking of text documents.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -30,25 +31,25 @@ class Chunker:
         """
         if not text:
             return []
-        
+
         # This can be a CPU-bound operation for very long texts
         return await asyncio.to_thread(self._chunk_sync, text)
 
     def _chunk_sync(self, text: str) -> List[str]:
         """Synchronous implementation of the chunking logic."""
         tokens = self.tokenizer.encode(text, add_special_tokens=False)
-        
+
         if len(tokens) <= self.config.chunk_size:
             return [self.tokenizer.decode(tokens)]
 
         chunks = []
         step = self.config.chunk_size - self.config.chunk_overlap
         for i in range(0, len(tokens), step):
-            chunk_tokens = tokens[i:i + self.config.chunk_size]
+            chunk_tokens = tokens[i : i + self.config.chunk_size]
             if not chunk_tokens:
                 continue
             chunks.append(self.tokenizer.decode(chunk_tokens))
-        
+
         return chunks
 
     async def chunk_batch(self, texts: List[str]) -> List[List[str]]:
@@ -62,4 +63,4 @@ class Chunker:
             A list where each item is a list of chunks for the corresponding input text.
         """
         tasks = [self.chunk(text) for text in texts]
-        return await asyncio.gather(*tasks) 
+        return await asyncio.gather(*tasks)

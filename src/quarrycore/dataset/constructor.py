@@ -1,20 +1,22 @@
 """
 Orchestrates the entire dataset construction pipeline.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from quarrycore.config.config import DatasetConfig
 from quarrycore.protocols import (
+    ContentMetadata,
     DatasetProtocol,
     ExtractedContent,
-    ContentMetadata,
-    QualityScore,
-    ProcessingResult,
     HardwareCapabilities,
+    ProcessingResult,
+    QualityScore,
 )
+
 from .analytics import Analytics
 from .chunker import Chunker
 from .exporter import get_exporter
@@ -34,9 +36,7 @@ class DatasetConstructor(DatasetProtocol):
         self.chunker = Chunker(config.chunking)
         self.formatter = Formatter(config.formatting)
         self.analytics = Analytics(config)
-        self.exporters = [
-            get_exporter(f, config.export) for f in config.export.formats
-        ]
+        self.exporters = [get_exporter(f, config.export) for f in config.export.formats]
 
     async def create_dataset(
         self,
@@ -47,7 +47,7 @@ class DatasetConstructor(DatasetProtocol):
     ) -> Dict[str, Any]:
         """
         Runs the full pipeline to generate a dataset.
-        
+
         Args:
             config: Dataset configuration
             output_path: Path where dataset should be saved
@@ -57,28 +57,24 @@ class DatasetConstructor(DatasetProtocol):
             A dictionary containing the analytics report of the created dataset.
         """
         print("Starting dataset construction...")
-        
+
         # TODO: Implement storage query to get available content
         available_content: List[ProcessingResult] = []  # Placeholder
-        
+
         # 1. Sample documents based on curriculum strategy
         target_size = config.max_documents or len(available_content) or 1000
-        
+
         # We need to pass metadata and quality scores to the sampler
-        docs_for_sampling = [
-            (res[2], res[4]) for res in available_content # (metadata, quality_score)
-        ]
+        docs_for_sampling = [(res[2], res[4]) for res in available_content]  # (metadata, quality_score)
         sampled_docs = self.sampler.sample(docs_for_sampling, target_size)
-        
+
         # Create a map from URL -> ExtractedContent to find the content for our sampled docs
-        content_by_url = {
-            res[2].url: res[1] for res in available_content # map url -> content
-        }
-        
+        content_by_url = {res[2].url: res[1] for res in available_content}  # map url -> content
+
         final_content_for_chunking = [
             content_by_url[meta.url] for meta, score in sampled_docs if meta.url in content_by_url
         ]
-        
+
         print(f"Sampled {len(sampled_docs)} documents for the dataset.")
 
         # 2. Chunk the text of the sampled documents
@@ -98,7 +94,6 @@ class DatasetConstructor(DatasetProtocol):
             # exporter.export(formatted_data, output_path)
             print(f"Simulating export with {exporter.__class__.__name__}")
 
-
         # 5. Analyze and report on the final dataset
         report = self.analytics.analyze(formatted_data, sampled_docs)
         self.analytics.pretty_print_report(report)
@@ -110,7 +105,7 @@ class DatasetConstructor(DatasetProtocol):
     async def sample_content(
         self,
         config: DatasetConfig,
-        available_content: List[Tuple[ExtractedContent, ContentMetadata, QualityScore]]
+        available_content: List[Tuple[ExtractedContent, ContentMetadata, QualityScore]],
     ) -> List[Tuple[ExtractedContent, ContentMetadata, QualityScore]]:
         """Sample content based on configuration."""
         raise NotImplementedError()
@@ -119,19 +114,15 @@ class DatasetConstructor(DatasetProtocol):
         self,
         content: ExtractedContent,
         metadata: ContentMetadata,
-        format_type: str = "text"
+        format_type: str = "text",
     ) -> Dict[str, Any]:
         """Format content for training."""
         raise NotImplementedError()
 
-    async def validate_dataset(
-        self,
-        dataset_path: Path,
-        config: DatasetConfig
-    ) -> Dict[str, Any]:
+    async def validate_dataset(self, dataset_path: Path, config: DatasetConfig) -> Dict[str, Any]:
         """Validate dataset quality."""
         raise NotImplementedError()
 
     async def export_dataset(self, *args: Any, **kwargs: Any) -> None:
         """Export dataset."""
-        raise NotImplementedError() 
+        raise NotImplementedError()
