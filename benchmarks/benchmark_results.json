@@ -1,38 +1,45 @@
 {
-  "duration_seconds": 5.835623741149902,
+  "duration_seconds": 44.92499804496765,
   "total_urls": 1000,
   "processed_count": 0,
-  "failed_count": 210,
+  "failed_count": 272,
   "throughput_urls_per_second": 0.0,
   "avg_time_per_url_ms": 0,
   "stage_stats": {
     "crawl": {
-      "count": 204,
-      "avg_duration": 0.0006227703655467314,
-      "min_duration": 0.00030350685119628906,
-      "max_duration": 0.0025436878204345703,
-      "total_duration": 0.1270451545715332
+      "count": 272,
+      "avg_duration": 1.0726391716915018,
+      "min_duration": 4.3392181396484375e-05,
+      "max_duration": 33.35912799835205,
+      "total_duration": 291.7578547000885
     },
     "extract": {
-      "count": 204,
-      "avg_duration": 0.000570067003661511,
-      "min_duration": 0.0002377033233642578,
-      "max_duration": 0.0353245735168457,
-      "total_duration": 0.11629366874694824
+      "count": 272,
+      "avg_duration": 0.0015225121203590842,
+      "min_duration": 5.459785461425781e-05,
+      "max_duration": 0.04005312919616699,
+      "total_duration": 0.4141232967376709
     },
     "metadata": {
-      "count": 204,
-      "avg_duration": 2.9112778457940794e-05,
-      "min_duration": 9.775161743164062e-06,
-      "max_duration": 0.0006620883941650391,
-      "total_duration": 0.005939006805419922
+      "count": 272,
+      "avg_duration": 6.538103608524099e-05,
+      "min_duration": 7.867813110351562e-06,
+      "max_duration": 0.0011048316955566406,
+      "total_duration": 0.017783641815185547
     },
     "deduplicate": {
-      "count": 204,
-      "avg_duration": 2.849102020263672e-05,
-      "min_duration": 8.106231689453125e-06,
-      "max_duration": 0.002082347869873047,
-      "total_duration": 0.005812168121337891
+      "count": 272,
+      "avg_duration": 5.151243770823759e-05,
+      "min_duration": 5.4836273193359375e-06,
+      "max_duration": 0.0009753704071044922,
+      "total_duration": 0.014011383056640625
+    },
+    "quality": {
+      "count": 3,
+      "avg_duration": 0.0009927749633789062,
+      "min_duration": 0.00015735626220703125,
+      "max_duration": 0.0024666786193847656,
+      "total_duration": 0.0029783248901367188
     }
   }
 }

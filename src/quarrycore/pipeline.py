@@ -53,12 +53,12 @@ class PipelineSettings(BaseModel):
     def from_env(cls) -> "PipelineSettings":
         """Create settings from environment variables."""
         return cls(
-            checkpoint_interval=float(os.getenv("PIPELINE_CHECKPOINT_INTERVAL", "60.0")),
-            checkpoint_dir=Path(os.getenv("PIPELINE_CHECKPOINT_DIR", "checkpoints")),
-            domain_failure_threshold=int(os.getenv("PIPELINE_DOMAIN_FAILURE_THRESHOLD", "5")),
-            domain_failure_window=float(os.getenv("PIPELINE_DOMAIN_FAILURE_WINDOW", "60.0")),
-            domain_backoff_duration=float(os.getenv("PIPELINE_DOMAIN_BACKOFF_DURATION", "120.0")),
-            dead_letter_db_path=Path(os.getenv("PIPELINE_DEAD_LETTER_DB_PATH", "dead_letter.db")),
+            checkpoint_interval=float(os.getenv("CHECKPOINT_INTERVAL", "60.0")),
+            checkpoint_dir=Path(os.getenv("CHECKPOINT_DIR", "checkpoints")),
+            domain_failure_threshold=int(os.getenv("DOMAIN_FAILURE_THRESHOLD", "5")),
+            domain_failure_window=float(os.getenv("DOMAIN_FAILURE_WINDOW", "60.0")),
+            domain_backoff_duration=float(os.getenv("DOMAIN_BACKOFF_DURATION", "120.0")),
+            dead_letter_db_path=Path(os.getenv("DEAD_LETTER_DB_PATH", "dead_letter.db")),
         )
 
 
@@ -525,7 +525,7 @@ class Pipeline:
             # For now, create mock implementations for missing components
             # These will be replaced with real components as they're added to container
 
-            # STAGE 1: CRAWLING (using basic HTTP client for now)
+            # STAGE 1: CRAWLING (using production HTTP client)
             stage_start = time.time()
             circuit_breaker = self.circuit_breakers[PipelineStage.CRAWL.value]
 
@@ -533,19 +533,19 @@ class Pipeline:
                 raise Exception(f"Circuit breaker open for stage {PipelineStage.CRAWL.value}")
 
             try:
-                # Basic HTTP crawling implementation
-                import httpx
+                # Use production HTTP client with robots.txt compliance and rate limiting
+                http_client = await self.container.get_http_client()
+                crawler_response = await http_client.fetch(url, timeout=30.0)
 
-                async with httpx.AsyncClient() as client:
-                    response = await client.get(url, timeout=30.0)
-                    crawl_result = CrawlResult(
-                        url=url,
-                        final_url=str(response.url),
-                        status_code=response.status_code,
-                        content=response.content,
-                        headers=dict(response.headers),
-                        status=ProcessingStatus.COMPLETED,
-                    )
+                # Convert to CrawlResult
+                crawl_result = CrawlResult(
+                    url=url,
+                    final_url=crawler_response.final_url,
+                    status_code=crawler_response.status,
+                    content=crawler_response.body,
+                    headers=crawler_response.headers,
+                    status=ProcessingStatus.COMPLETED if crawler_response.status < 400 else ProcessingStatus.FAILED,
+                )
                 await circuit_breaker.record_success()
                 self._record_stage_timing(PipelineStage.CRAWL.value, time.time() - stage_start)
             except Exception as e:

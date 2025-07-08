@@ -38,12 +38,15 @@ class CrawlerConfig(BaseModel):
     timeout: float = Field(default=30.0, description="HTTP request timeout in seconds.")
     retries: int = Field(default=3, description="Number of retry attempts for failed requests.")
     user_agent: str = Field(
-        default="Mozilla/5.0 (compatible; QuarryCore/1.0; +https://github.com/quarrycore)",
+        default="QuarryCoreBot/1.0 (+https://github.com/shua-ie/QuarryCore)",
         description="User-Agent string for HTTP requests.",
     )
     respect_robots: bool = Field(default=True, description="Whether to respect robots.txt.")
     concurrent_requests: int = Field(default=10, description="Max concurrent HTTP requests.")
     rate_limit: float = Field(default=1.0, description="Requests per second per domain.")
+    max_concurrency_per_domain: int = Field(default=2, description="Maximum concurrent requests per domain.")
+    max_retries: int = Field(default=3, description="Maximum retry attempts for failed requests.")
+    backoff_cooldown_seconds: int = Field(default=120, description="Cooldown period after consecutive failures.")
 
     @validator("path", pre=True, always=True)  # type: ignore[pydantic-validator]
     # TODO: Migrate to Pydantic V2 @field_validator
@@ -233,7 +236,7 @@ class ChunkingConfig(BaseModel):
     """Configuration for token-aware chunking."""
 
     tokenizer_name: str = Field(
-        default="mistralai/Mistral-7B-v0.1",
+        default="gpt2",
         description="HuggingFace tokenizer to use for chunking.",
     )
     chunk_size: int = Field(default=2048, description="Target size of each chunk in tokens.")
@@ -294,6 +297,16 @@ class DatasetConfig(BaseModel):
     compression: str | None = Field(default="gzip", description="Compression algorithm to use.")
     shard_size: int = Field(default=1_000_000, description="Maximum records per shard.")
     include_metadata: bool = Field(default=True, description="Include metadata in dataset output.")
+    sampling: Optional[SamplingConfig] = Field(
+        default=None, description="Sampling configuration for dataset construction."
+    )
+    chunking: ChunkingConfig = Field(
+        default_factory=ChunkingConfig, description="Configuration for token-aware chunking."
+    )
+    formatting: FormattingConfig = Field(
+        default_factory=FormattingConfig, description="Configuration for output formatting."
+    )
+    export: ExportConfig = Field(default_factory=ExportConfig, description="Configuration for dataset exporting.")
 
     @validator("output_path", pre=True, always=True)  # type: ignore[pydantic-validator]
     # TODO: Migrate to Pydantic V2 @field_validator

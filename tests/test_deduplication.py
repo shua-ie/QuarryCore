@@ -224,10 +224,6 @@ class TestSemanticDeduplication:
             mock_st.return_value = mock_model
             yield mock_st
 
-    @pytest.mark.skipif(
-        not pytest.importorskip("sentence_transformers"),
-        reason="sentence-transformers not installed",
-    )
     def test_semantic_init(self, test_dir, mock_sentencetransformer):
         """Test semantic deduplicator initialization."""
         # Use hardware capabilities that won't trigger Pi mode
@@ -244,10 +240,6 @@ class TestSemanticDeduplication:
         assert semantic.use_gpu is False
         mock_sentencetransformer.assert_called_with("mock-model", device="cpu")
 
-    @pytest.mark.skipif(
-        not pytest.importorskip("sentence_transformers"),
-        reason="sentence-transformers not installed",
-    )
     def test_semantic_similarity(self, test_dir, mock_sentencetransformer):
         """Test semantic similarity detection."""
         # Use hardware capabilities that won't trigger Pi mode

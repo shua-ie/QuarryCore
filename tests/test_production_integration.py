@@ -88,6 +88,9 @@ class TestProductionIntegration:
         # Create mock container with real-like components
         container = DependencyContainer()
 
+        # Initialize the container first
+        await container.initialize()
+
         # Mock the components to verify they're called (not sleep)
         with (
             patch.object(container, "get_quality") as mock_quality,
@@ -142,6 +145,9 @@ class TestProductionIntegration:
                 # Verify no sleep() calls (real processing)
                 assert result.processing_time is not None
                 assert result.processing_time > 0  # Real processing takes time
+
+        # Clean up the container
+        await container.shutdown()
 
         print("✅ Pipeline uses real component processing (no simulation)")
 

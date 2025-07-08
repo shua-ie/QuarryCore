@@ -21,12 +21,15 @@ import signal
 import sqlite3
 import tempfile
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import List
+from typing import Any, Callable, Dict, List, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 import pytest
 import structlog
+from quarrycore.config import Config
 from quarrycore.container import DependencyContainer
 from quarrycore.pipeline import Pipeline, PipelineCheckpoint
 from quarrycore.recovery.dead_letter import DeadLetterQueue
@@ -69,44 +72,69 @@ class MockAsyncContextManager:
 
 
 class MockContainer(DependencyContainer):
-    """Mock container for testing without real dependencies."""
+    """Mock container for testing with lazy initialization."""
 
     def __init__(self):
-        # Initialize parent with None config_path to avoid file system dependencies
-        super().__init__(config_path=None)
+        super().__init__()
         self.is_running = False
+        self._instances = {}
+        # Use lazy initialization to avoid event loop binding issues
+        self._instances_lock = None
 
-    def lifecycle(self):
-        """Mock lifecycle context manager."""
-        return self
+    @property
+    def instances_lock(self):
+        """Lazy initialize the lock to avoid event loop binding issues."""
+        if self._instances_lock is None:
+            self._instances_lock = asyncio.Lock()
+        return self._instances_lock
+
+    def get_health_status(self):
+        return {"status": "healthy"}
+
+    @asynccontextmanager
+    async def lifecycle(self):
+        yield self
 
     async def __aenter__(self):
+        """Ensure lock is created in the correct event loop."""
+        await self.instances_lock.acquire()
         self.is_running = True
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         self.is_running = False
+        self.instances_lock.release()
 
     async def get_observability(self):
-        """Return mock observability."""
-        mock_obs = MagicMock()
-        mock_obs.start_monitoring = MagicMock(return_value=MockAsyncContextManager())
+        mock_obs = AsyncMock()
+        mock_obs.start_monitoring = lambda: MockAsyncContextManager()
         mock_obs.log_error = AsyncMock()
         return mock_obs
 
     async def get_quality(self):
-        """Return mock quality assessor."""
         mock_quality = AsyncMock()
-        mock_quality_score = MagicMock()
-        mock_quality_score.overall_score = 0.8
-        mock_quality.assess_quality.return_value = mock_quality_score
+        mock_quality.assess_quality = AsyncMock(return_value=MagicMock(overall_score=0.8))
         return mock_quality
 
     async def get_storage(self):
-        """Return mock storage manager."""
         mock_storage = AsyncMock()
-        mock_storage.store_extracted_content.return_value = "test-doc-id"
+        mock_storage.store_extracted_content = AsyncMock(return_value="test-doc-id")
         return mock_storage
+
+    async def get_http_client(self):
+        """Return a mock HTTP client."""
+        mock_http_client = AsyncMock()
+        mock_http_client.fetch = AsyncMock()
+
+        # Create a mock CrawlerResponse
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.headers = {"content-type": "text/html"}
+        mock_response.body = b"<html><title>Test</title><body>Test content</body></html>"
+        mock_response.final_url = "https://example.com"
+
+        mock_http_client.fetch.return_value = mock_response
+        return mock_http_client
 
 
 @pytest.fixture

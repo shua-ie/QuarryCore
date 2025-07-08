@@ -18,6 +18,7 @@ from watchdog.observers import Observer
 from quarrycore.config import Config
 
 if TYPE_CHECKING:
+    from quarrycore.crawler.http_client import HttpClient
     from quarrycore.dataset import DatasetConstructor
     from quarrycore.observability import ObservabilityManager
     from quarrycore.quality import QualityAssessor
@@ -81,6 +82,7 @@ class DependencyContainer:
 
         # Lazy-loaded module instances
         self._instances: Dict[str, LazyInstance[Any]] = {}
+        self._instances_lock = asyncio.Lock()
         self._observer: Optional[Any] = None  # Observer type
         self._shutdown_handlers: List[Callable[[], Any]] = []
 
@@ -90,9 +92,17 @@ class DependencyContainer:
 
     async def initialize(self) -> None:
         """Initialize the container and load configuration."""
-        await self.load_config()
+        # Only load config if not already provided
+        if self.config is None:
+            await self.load_config()
+        else:
+            # Config already provided, just create instances
+            await self._create_instances()
+
         await self._setup_config_watching()
         await self._setup_signal_handlers()
+
+        self.is_running = True
 
         self.logger.info(
             "Dependency container initialized",
@@ -107,11 +117,19 @@ class DependencyContainer:
         else:
             self.config = Config()
 
+        await self._create_instances()
+
+    async def _create_instances(self) -> None:
+        """Create lazy instances with current configuration."""
+        if self.config is None:
+            raise RuntimeError("Configuration must be loaded before creating instances")
+
         # Clear existing instances on config reload
         await self._cleanup_instances()
         self._instances.clear()
 
         # Import modules only when needed to avoid circular imports
+        from quarrycore.crawler.http_client import HttpClient
         from quarrycore.dataset import DatasetConstructor
         from quarrycore.observability import ObservabilityManager
         from quarrycore.quality import QualityAssessor
@@ -123,6 +141,7 @@ class DependencyContainer:
             "storage": LazyInstance(StorageManager, self.config.storage),
             "quality": LazyInstance(QualityAssessor, self.config.quality),
             "dataset": LazyInstance(DatasetConstructor, self.config.dataset),
+            "http_client": LazyInstance(HttpClient, self.config),
             # Add other modules as they become available
         }
 
@@ -139,19 +158,28 @@ class DependencyContainer:
 
     async def get_observability(self) -> ObservabilityManager:
         """Get the observability manager instance."""
-        return await self._instances["observability"].get()  # type: ignore
+        async with self._instances_lock:
+            return await self._instances["observability"].get()  # type: ignore
 
     async def get_storage(self) -> StorageManager:
         """Get the storage manager instance."""
-        return await self._instances["storage"].get()  # type: ignore
+        async with self._instances_lock:
+            return await self._instances["storage"].get()  # type: ignore
 
     async def get_quality(self) -> QualityAssessor:
         """Get the quality assessor instance."""
-        return await self._instances["quality"].get()  # type: ignore
+        async with self._instances_lock:
+            return await self._instances["quality"].get()  # type: ignore
 
     async def get_dataset(self) -> DatasetConstructor:
         """Get the dataset constructor instance."""
-        return await self._instances["dataset"].get()  # type: ignore
+        async with self._instances_lock:
+            return await self._instances["dataset"].get()  # type: ignore
+
+    async def get_http_client(self) -> HttpClient:
+        """Get the HTTP client instance."""
+        async with self._instances_lock:
+            return await self._instances["http_client"].get()  # type: ignore
 
     @asynccontextmanager
     async def lifecycle(self) -> AsyncIterator[DependencyContainer]:
@@ -175,10 +203,7 @@ class DependencyContainer:
             self._observer.stop()
             self._observer.join()
 
-        # Cleanup all instances
-        await self._cleanup_instances()
-
-        # Run shutdown handlers
+        # Run shutdown handlers first
         for handler in self._shutdown_handlers:
             try:
                 if asyncio.iscoroutinefunction(handler):
@@ -187,6 +212,9 @@ class DependencyContainer:
                     handler()
             except Exception as e:
                 self.logger.error("Error in shutdown handler", error=str(e))
+
+        # Cleanup all instances
+        await self._cleanup_instances()
 
         self.is_running = False
         self.logger.info("Dependency container shutdown complete")

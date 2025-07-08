@@ -14,12 +14,15 @@ import json
 import os
 import tempfile
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import urlparse
 from uuid import uuid4
 
 import pytest
+from quarrycore.config import Config
 from quarrycore.container import DependencyContainer
 from quarrycore.pipeline import (
     DomainFailureTracker,
@@ -38,22 +41,51 @@ class MockContainer(DependencyContainer):
     """Mock container for comprehensive testing."""
 
     def __init__(self, should_fail: bool = False):
+        super().__init__()
         self.is_running = False
         self.should_fail = should_fail
+        self._http_client_should_fail = False
+        self._http_client_failure_type = "network"
+        self._instances: Dict[str, Any] = {}
+        self._observer: Optional[Any] = None
+        self._shutdown_handlers: List[Callable[[], Any]] = []
+        self.pipeline_id = str(uuid4())
+        self.config: Optional[Config] = None
+        # Use lazy initialization to avoid event loop binding issues
+        self._instances_lock = None
 
-    def lifecycle(self):
-        return self
+    @property
+    def instances_lock(self):
+        """Lazy initialize the lock to avoid event loop binding issues."""
+        if self._instances_lock is None:
+            self._instances_lock = asyncio.Lock()
+        return self._instances_lock
+
+    def set_http_client_failure(self, should_fail: bool, failure_type: str = "network"):
+        """Configure HTTP client to simulate failures."""
+        self._http_client_should_fail = should_fail
+        self._http_client_failure_type = failure_type
+
+    def get_health_status(self):
+        return {"status": "healthy"}
+
+    @asynccontextmanager
+    async def lifecycle(self):
+        yield self
 
     async def __aenter__(self):
+        """Ensure lock is created in the correct event loop."""
+        await self.instances_lock.acquire()
         self.is_running = True
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         self.is_running = False
+        self.instances_lock.release()
 
     async def get_observability(self):
-        mock_obs = MagicMock()
-        mock_obs.start_monitoring = MagicMock(return_value=MockAsyncContextManager())
+        mock_obs = AsyncMock()
+        mock_obs.start_monitoring = lambda: MockAsyncContextManager()
         mock_obs.log_error = AsyncMock()
         return mock_obs
 
@@ -72,6 +104,28 @@ class MockContainer(DependencyContainer):
         mock_storage.store_extracted_content = AsyncMock()
         mock_storage.store_extracted_content.return_value = "test-doc-id"
         return mock_storage
+
+    async def get_http_client(self):
+        """Return a mock HTTP client that can simulate failures."""
+        mock_http_client = AsyncMock()
+
+        if self._http_client_should_fail:
+            if self._http_client_failure_type == "network":
+                mock_http_client.fetch = AsyncMock(side_effect=Exception("Network error"))
+            elif self._http_client_failure_type == "import":
+                mock_http_client.fetch = AsyncMock(side_effect=Exception("http_client"))
+            else:
+                mock_http_client.fetch = AsyncMock(side_effect=Exception(f"{self._http_client_failure_type} error"))
+        else:
+            # Create a mock CrawlerResponse
+            mock_response = MagicMock()
+            mock_response.status = 200
+            mock_response.headers = {"content-type": "text/html"}
+            mock_response.body = b"<html><title>Test</title><body>Test content</body></html>"
+            mock_response.final_url = "https://example.com"
+            mock_http_client.fetch = AsyncMock(return_value=mock_response)
+
+        return mock_http_client
 
 
 class MockAsyncContextManager:
@@ -96,7 +150,7 @@ class TestPipelineSettings:
         assert settings.domain_failure_window == 60.0
         assert settings.domain_backoff_duration == 120.0
 
-    @patch.dict("os.environ", {"PIPELINE_CHECKPOINT_INTERVAL": "30.0"})
+    @patch.dict("os.environ", {"CHECKPOINT_INTERVAL": "30.0"})
     def test_pipeline_settings_from_env(self):
         """Test loading settings from environment variables."""
         settings = PipelineSettings.from_env()
@@ -105,11 +159,11 @@ class TestPipelineSettings:
     @patch.dict(
         "os.environ",
         {
-            "PIPELINE_CHECKPOINT_DIR": "/tmp/test-checkpoints",
-            "PIPELINE_DOMAIN_FAILURE_THRESHOLD": "3",
-            "PIPELINE_DOMAIN_FAILURE_WINDOW": "30.0",
-            "PIPELINE_DOMAIN_BACKOFF_DURATION": "60.0",
-            "PIPELINE_DEAD_LETTER_DB_PATH": "/tmp/test-dlq.db",
+            "CHECKPOINT_DIR": "/tmp/test-checkpoints",
+            "DOMAIN_FAILURE_THRESHOLD": "3",
+            "DOMAIN_FAILURE_WINDOW": "30.0",
+            "DOMAIN_BACKOFF_DURATION": "60.0",
+            "DEAD_LETTER_DB_PATH": "/tmp/test-dlq.db",
         },
     )
     def test_pipeline_settings_all_env_vars(self):
@@ -538,15 +592,19 @@ class TestPipelineProcessing:
         # Mock logger
         pipeline.logger = MagicMock()
 
-        # Force processing failure
-        with patch("httpx.AsyncClient") as mock_httpx:
-            mock_httpx.return_value.__aenter__.side_effect = Exception("Network error")
+        # Force processing failure by making the HTTP client fail
+        async def get_failing_http_client():
+            mock_http_client = AsyncMock()
+            mock_http_client.fetch = AsyncMock(side_effect=Exception("Network error"))
+            return mock_http_client
 
-            result = await pipeline._process_url("https://example.com", "worker-1")
+        container.get_http_client = get_failing_http_client
 
-            assert result.status == ProcessingStatus.FAILED
-            # Should log DLQ failure
-            pipeline.logger.error.assert_called()
+        result = await pipeline._process_url("https://example.com", "worker-1")
+
+        assert result.status == ProcessingStatus.FAILED
+        # Should log DLQ failure
+        pipeline.logger.error.assert_called()
 
 
 class TestPipelinePerformanceStats:
@@ -938,17 +996,16 @@ class TestPipelineIntegrationPaths:
         container = MockContainer()
         pipeline = Pipeline(container)
 
-        # Mock HTTP client to raise exception
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_client.return_value.__aenter__.return_value.get.side_effect = Exception("Network error")
+        # Configure HTTP client to fail
+        container.set_http_client_failure(True, "network")
 
-            # Process URL that will fail at HTTP level
-            result = await pipeline._process_url("https://example.com/fail", "worker-1")
+        # Process URL that will fail at HTTP level
+        result = await pipeline._process_url("https://example.com/fail", "worker-1")
 
-            # Should handle HTTP errors gracefully
-            assert result.status == ProcessingStatus.FAILED
-            assert result.error_info is not None
-            assert "Network error" in result.error_info.error_message
+        # Should handle HTTP errors gracefully
+        assert result.status == ProcessingStatus.FAILED
+        assert result.error_info is not None
+        assert "Network error" in result.error_info.error_message
 
     @pytest.mark.asyncio
     async def test_pipeline_content_extraction_error(self):
@@ -1129,13 +1186,12 @@ class TestPipelineSignalHandling:
         mock_cb.record_failure = AsyncMock(side_effect=Exception("CB error"))
         pipeline.circuit_breakers[PipelineStage.CRAWL.value] = mock_cb
 
-        # Mock httpx to fail
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_client.return_value.__aenter__.return_value.get.side_effect = Exception("Network error")
+        # Configure HTTP client to fail, which should trigger circuit breaker record_failure
+        container.set_http_client_failure(True, "network")
 
-            result = await pipeline._process_url("https://example.com", "worker-1")
+        result = await pipeline._process_url("https://example.com", "worker-1")
 
-            assert result.status == ProcessingStatus.FAILED
+        assert result.status == ProcessingStatus.FAILED
 
     @pytest.mark.asyncio
     async def test_process_url_extraction_stage_errors(self):
@@ -1443,12 +1499,13 @@ class TestPipelineAdditionalCoverage:
         container = MockContainer()
         pipeline = Pipeline(container)
 
-        # Mock httpx to raise ImportError
-        with patch.dict("sys.modules", {"httpx": None}):
-            result = await pipeline._process_url("https://example.com", "worker-1")
+        # Configure HTTP client to simulate import error
+        container.set_http_client_failure(True, "import")
 
-            assert result.status == ProcessingStatus.FAILED
-            assert result.error_info is not None
+        result = await pipeline._process_url("https://example.com", "worker-1")
+
+        assert result.status == ProcessingStatus.FAILED
+        assert result.error_info is not None
 
     @pytest.mark.asyncio
     async def test_process_url_with_beautifulsoup_error(self):

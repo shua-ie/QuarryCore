@@ -24,7 +24,15 @@ def calculate_retention(baseline: dict, current: dict) -> float:
 
     Higher throughput is better, so retention = (current / baseline) * 100
     """
-    baseline_throughput = baseline.get("throughput_urls_per_second", 0)
+    # Handle different data structures
+    # baseline.json uses performance_metrics.urls_per_second
+    # benchmark_results.json uses throughput_urls_per_second
+
+    if "performance_metrics" in baseline:
+        baseline_throughput = baseline["performance_metrics"].get("urls_per_second", 0)
+    else:
+        baseline_throughput = baseline.get("throughput_urls_per_second", 0)
+
     current_throughput = current.get("throughput_urls_per_second", 0)
 
     if baseline_throughput == 0:
@@ -76,8 +84,17 @@ def main():
 
     # Print comparison
     print("=== Benchmark Comparison Report ===")
-    print(f"Baseline throughput: {baseline.get('throughput_urls_per_second', 0):.2f} URLs/sec")
-    print(f"Current throughput:  {current.get('throughput_urls_per_second', 0):.2f} URLs/sec")
+
+    # Handle different data structures for baseline
+    if "performance_metrics" in baseline:
+        baseline_throughput = baseline["performance_metrics"].get("urls_per_second", 0)
+    else:
+        baseline_throughput = baseline.get("throughput_urls_per_second", 0)
+
+    current_throughput = current.get("throughput_urls_per_second", 0)
+
+    print(f"Baseline throughput: {baseline_throughput:.2f} URLs/sec")
+    print(f"Current throughput:  {current_throughput:.2f} URLs/sec")
     print(f"Performance retention: {retention:.1f}%")
     print(f"Required threshold: {threshold:.1f}%")
 

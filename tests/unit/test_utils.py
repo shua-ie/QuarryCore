@@ -135,8 +135,8 @@ class TestSlugify:
         # Current implementation strips non-ASCII characters
         assert slugify("Café") == "caf"
         assert slugify("naïve") == "na-ve"  # ï gets stripped, leaving na ve
-        assert slugify("Москва") == ""  # All non-ASCII
-        assert slugify("北京") == ""  # All non-ASCII
+        assert slugify("Москва") == "untitled"  # All non-ASCII results in empty, returns untitled
+        assert slugify("北京") == "untitled"  # All non-ASCII results in empty, returns untitled
         assert slugify("🚀 Rocket") == "rocket"
 
     def test_max_length(self):
@@ -162,9 +162,9 @@ class TestSlugify:
 
     def test_empty_and_whitespace(self):
         """Test empty strings and whitespace."""
-        assert slugify("") == ""
-        assert slugify("   ") == ""
-        assert slugify("\t\n") == ""
+        assert slugify("") == "untitled"
+        assert slugify("   ") == "untitled"
+        assert slugify("\t\n") == "untitled"
         assert slugify("  spaces  ") == "spaces"
 
     def test_consecutive_separators(self):

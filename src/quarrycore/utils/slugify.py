@@ -74,10 +74,10 @@ def slugify(text: str, replacement: str = "-", max_length: Optional[int] = 200, 
         'con-reserved'
 
         >>> slugify("")
-        ''
+        'untitled'
     """
     if not text or not text.strip():
-        return ""
+        return "untitled"
 
     # Start with the input text
     result = text.strip()
@@ -111,7 +111,7 @@ def slugify(text: str, replacement: str = "-", max_length: Optional[int] = 200, 
 
     # Handle edge case where everything was stripped away
     if not result:
-        return ""
+        return "untitled"
 
     return result
 

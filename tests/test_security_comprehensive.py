@@ -515,11 +515,8 @@ class TestDataPrivacyCompliance:
     @pytest.mark.security
     async def test_gdpr_data_deletion(self, temp_dir):
         """Test GDPR-compliant data deletion using new storage interface."""
-        try:
-            from quarrycore.config.config import StorageConfig
-            from quarrycore.storage import StorageManager
-        except ImportError:
-            pytest.skip("Storage module not available")
+        from quarrycore.config.config import StorageConfig
+        from quarrycore.storage import StorageManager
 
         config = StorageConfig()
         config.hot.db_path = temp_dir / "test_gdpr.db"
@@ -556,13 +553,10 @@ class TestDataPrivacyCompliance:
     @pytest.mark.security
     async def test_data_export_for_gdpr(self, temp_dir):
         """Test GDPR-compliant data export using new storage interface."""
-        try:
-            import json
+        import json
 
-            from quarrycore.config.config import StorageConfig
-            from quarrycore.storage import StorageManager
-        except ImportError:
-            pytest.skip("Storage module not available")
+        from quarrycore.config.config import StorageConfig
+        from quarrycore.storage import StorageManager
 
         config = StorageConfig()
         config.hot.db_path = temp_dir / "test_export.db"

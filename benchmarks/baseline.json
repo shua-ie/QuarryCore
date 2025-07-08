@@ -1,52 +1,37 @@
 {
-  "duration_seconds": 20.0,
-  "total_urls": 1000,
-  "processed_count": 1000,
-  "failed_count": 0,
-  "throughput_urls_per_second": 50.0,
-  "avg_time_per_url_ms": 20.0,
-  "stage_stats": {
-    "crawl": {
-      "count": 1000,
-      "avg_duration": 0.005,
-      "min_duration": 0.001,
-      "max_duration": 0.02,
-      "total_duration": 5.0
-    },
-    "extract": {
-      "count": 1000,
-      "avg_duration": 0.003,
-      "min_duration": 0.001,
-      "max_duration": 0.01,
-      "total_duration": 3.0
-    },
-    "metadata": {
-      "count": 1000,
-      "avg_duration": 0.002,
-      "min_duration": 0.001,
-      "max_duration": 0.005,
-      "total_duration": 2.0
-    },
-    "deduplicate": {
-      "count": 1000,
-      "avg_duration": 0.002,
-      "min_duration": 0.001,
-      "max_duration": 0.005,
-      "total_duration": 2.0
-    },
-    "quality": {
-      "count": 1000,
-      "avg_duration": 0.004,
-      "min_duration": 0.002,
-      "max_duration": 0.01,
-      "total_duration": 4.0
-    },
-    "storage": {
-      "count": 1000,
-      "avg_duration": 0.004,
-      "min_duration": 0.002,
-      "max_duration": 0.01,
-      "total_duration": 4.0
-    }
+  "benchmark_info": {
+    "timestamp": 1751596852.4724715,
+    "version": "1.0.0",
+    "test_type": "1k_url_crawl",
+    "description": "Baseline performance for 1000 URL crawling test"
+  },
+  "system_info": {
+    "python_version": "3.11",
+    "platform": "linux",
+    "cpu_cores": 8,
+    "memory_gb": 16
+  },
+  "performance_metrics": {
+    "total_urls": 1000,
+    "total_duration_seconds": 73.2,
+    "urls_per_second": 13.67,
+    "urls_per_minute": 820.0,
+    "success_rate": 0.95,
+    "average_response_time_ms": 150,
+    "memory_peak_mb": 245,
+    "cpu_avg_percent": 45.2
+  },
+  "detailed_metrics": {
+    "extraction_time_ms": 45.3,
+    "storage_time_ms": 12.1,
+    "quality_assessment_ms": 8.7,
+    "deduplication_ms": 5.2,
+    "network_time_ms": 87.4
+  },
+  "test_conditions": {
+    "concurrent_workers": 10,
+    "rate_limit_rps": 5.0,
+    "timeout_seconds": 30.0,
+    "retry_attempts": 3
   }
-} 
+}
