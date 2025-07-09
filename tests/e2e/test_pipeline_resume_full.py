@@ -292,6 +292,7 @@ async def test_ac04_duplicate_dead_letter_guard(temp_dir):
 
         # Verify UNIQUE constraint worked - should be upsert, not insert
         # Check database directly
+        assert dlq._db is not None, "Database should be initialized"
         async with dlq._db.execute(
             "SELECT failure_count, error_message FROM failed_documents WHERE url = ? AND failure_stage = ?",
             ("https://example.com/test", "crawl"),
@@ -299,7 +300,7 @@ async def test_ac04_duplicate_dead_letter_guard(temp_dir):
             row = await cursor.fetchone()
 
         assert row is not None, "Failed document should exist"
-        failure_count, error_message = row[0], row[1]
+        failure_count, error_message = row
         assert failure_count == 2, f"Failure count should be 2 (upserted), got {failure_count}"
         assert error_message == "Connection timeout again", "Error message should be updated"
 
@@ -309,11 +310,13 @@ async def test_ac04_duplicate_dead_letter_guard(temp_dir):
         )
 
         # Verify both entries exist
+        assert dlq._db is not None, "Database should be initialized"
         async with dlq._db.execute(
             "SELECT COUNT(*) FROM failed_documents WHERE url = ?", ("https://example.com/test",)
         ) as cursor:
             row = await cursor.fetchone()
 
+        assert row is not None, "Row should exist"
         assert row[0] == 2, "Should have 2 entries for same URL with different stages"
 
     finally:

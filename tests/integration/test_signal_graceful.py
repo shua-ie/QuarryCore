@@ -48,8 +48,8 @@ def test_sigint_creates_checkpoint(tmp_path):
     proc = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=Path.cwd())
 
     try:
-        # Wait for process to start and begin processing
-        time.sleep(2)
+        # Wait for process to start and begin processing (minimal wait for subprocess startup)
+        time.sleep(0.3)
 
         # Send SIGINT
         proc.send_signal(signal.SIGINT)
@@ -109,8 +109,8 @@ def test_sigterm_creates_checkpoint(tmp_path):
     proc = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=Path.cwd())
 
     try:
-        # Wait for startup
-        time.sleep(2)
+        # Wait for startup (minimal wait for subprocess startup)
+        time.sleep(0.3)
 
         # Send SIGTERM
         proc.terminate()
