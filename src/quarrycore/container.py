@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from quarrycore.dataset import DatasetConstructor
     from quarrycore.observability import ObservabilityManager
     from quarrycore.quality import QualityAssessor
+    from quarrycore.recovery.dead_letter_service import SQLiteDeadLetterService
     from quarrycore.storage import StorageManager
 
 T = TypeVar("T")
@@ -133,6 +134,7 @@ class DependencyContainer:
         from quarrycore.dataset import DatasetConstructor
         from quarrycore.observability import ObservabilityManager
         from quarrycore.quality import QualityAssessor
+        from quarrycore.recovery.dead_letter_service import SQLiteDeadLetterService
         from quarrycore.storage import StorageManager
 
         # Create lazy instances with new configuration
@@ -142,6 +144,9 @@ class DependencyContainer:
             "quality": LazyInstance(QualityAssessor, self.config.quality),
             "dataset": LazyInstance(DatasetConstructor, self.config.dataset),
             "http_client": LazyInstance(HttpClient, self.config),
+            "dead_letter": LazyInstance(
+                SQLiteDeadLetterService, self.config.storage.hot.db_path.parent / "dead_letter.db"
+            ),
             # Add other modules as they become available
         }
 
@@ -180,6 +185,11 @@ class DependencyContainer:
         """Get the HTTP client instance."""
         async with self._instances_lock:
             return await self._instances["http_client"].get()  # type: ignore
+
+    async def get_dead_letter(self) -> SQLiteDeadLetterService:
+        """Get the dead letter service instance."""
+        async with self._instances_lock:
+            return await self._instances["dead_letter"].get()  # type: ignore
 
     @asynccontextmanager
     async def lifecycle(self) -> AsyncIterator[DependencyContainer]:

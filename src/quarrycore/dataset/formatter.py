@@ -29,9 +29,16 @@ class Formatter:
             return [self._to_instruction_format(chunk) for chunk in chunks]
         elif self.config.format_type == "document":
             return [{"text": chunk} for chunk in chunks]
+        elif self.config.format_type == "jsonl":
+            return [{"text": chunk, "format": "jsonl"} for chunk in chunks]
+        elif self.config.format_type == "parquet":
+            return [{"text": chunk, "format": "parquet"} for chunk in chunks]
+        elif self.config.format_type == "conversation":
+            return [self._to_conversation_format(chunk) for chunk in chunks]
         else:
-            # Placeholder for conversation or other formats
-            raise NotImplementedError(f"Format type '{self.config.format_type}' is not yet supported.")
+            raise ValueError(
+                f"Unsupported format type: '{self.config.format_type}'. Supported formats: instruction, document, jsonl, parquet, conversation"
+            )
 
     def _to_instruction_format(self, text: str) -> Dict[str, str]:
         """
@@ -52,4 +59,23 @@ class Formatter:
             "instruction": instruction,
             "response": response,
             "text": formatted_text,
+        }
+
+    def _to_conversation_format(self, text: str) -> Dict[str, Any]:
+        """
+        Creates a conversation format from a text chunk.
+
+        This creates a simple user-assistant conversation structure.
+        """
+        # Extract title if possible for the user query
+        lines = text.split("\n")
+        title = lines[0].strip() if lines else "Tell me about this content"
+
+        # Create conversation format
+        return {
+            "messages": [
+                {"role": "user", "content": f"Can you tell me about: {title}"},
+                {"role": "assistant", "content": text},
+            ],
+            "format": "conversation",
         }

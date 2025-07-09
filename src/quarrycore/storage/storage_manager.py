@@ -41,9 +41,44 @@ class StorageManager(StorageProtocol):
         await self.sqlite.initialize()
 
     async def store_crawl_result(self, result: CrawlResult) -> UUID:
-        # For now, we only store the final processed content.
-        # This could be implemented to store raw crawl data if needed.
-        raise NotImplementedError("Storing raw crawl results is not yet implemented.")
+        """Store raw crawl result data atomically."""
+        import json
+        import uuid
+
+        content_id = uuid.uuid4()
+
+        # Store raw crawl data as JSON in a separate table or extended metadata
+        raw_data = {
+            "content_id": str(content_id),
+            "url": result.url,
+            "status_code": result.status_code,
+            "headers": dict(result.headers) if result.headers else {},
+            "body": result.content.decode("utf-8", errors="ignore") if result.content else "",
+            "timestamp": result.timestamp.isoformat() if result.timestamp else None,
+            "response_time_ms": result.performance.total_duration_ms,
+        }
+
+        # Store in SQLite with basic metadata structure
+        metadata_record = {
+            "content_id": str(content_id),
+            "url": result.url,
+            "content_hash": str(hash(result.content or b"")),
+            "parquet_path": "",  # No parquet for raw crawl results
+            "title": "",
+            "description": "",
+            "domain": result.url.split("://")[1].split("/")[0] if "://" in result.url else "unknown",
+            "author": "",
+            "published_date": None,
+            "quality_score": 0.0,
+            "is_duplicate": False,
+            "toxicity_score": 0.0,
+            "coherence_score": 0.0,
+            "grammar_score": 0.0,
+            "full_metadata": json.dumps(raw_data),
+        }
+
+        await self.sqlite.store_batch([metadata_record])
+        return content_id
 
     async def store_extracted_content(
         self,
@@ -122,8 +157,99 @@ class StorageManager(StorageProtocol):
         }
 
     async def query_content(self, **kwargs) -> AsyncIterator[Tuple[ExtractedContent, ContentMetadata, QualityScore]]:
-        # This would involve querying SQLite first, then retrieving from Parquet
-        raise NotImplementedError("Querying content is not yet implemented.")
+        """Query content from storage tiers and reconstruct objects."""
+        import json
+        from datetime import datetime
+
+        limit = kwargs.get("limit", 100)
+        domain_filter = kwargs.get("domain")
+        min_quality = kwargs.get("min_quality", 0.0)
+
+        # Build query conditions
+        query_conditions = []
+        query_params = []
+
+        if domain_filter:
+            query_conditions.append("domain = ?")
+            query_params.append(domain_filter)
+
+        if min_quality > 0:
+            query_conditions.append("quality_score >= ?")
+            query_params.append(min_quality)
+
+        where_clause = " AND ".join(query_conditions)
+        if where_clause:
+            where_clause = f"WHERE {where_clause}"
+
+        # Query SQLite for metadata
+        sql = f"SELECT * FROM processed_content {where_clause} ORDER BY processed_at DESC LIMIT ?"
+        query_params.append(limit)
+
+        async with self.sqlite.get_connection() as conn:
+            cursor = await conn.execute(sql, query_params)
+            rows = await cursor.fetchall()
+
+            for row in rows:
+                try:
+                    # Reconstruct ExtractedContent
+                    content_text = ""
+                    content_title = row["title"] or ""
+
+                    # Try to load from Parquet if path exists
+                    if row["parquet_path"]:
+                        try:
+                            import pandas as pd
+
+                            parquet_path = self.config.warm.base_path / row["parquet_path"]
+                            if parquet_path.exists():
+                                df = pd.read_parquet(parquet_path)
+                                content_row = df[df["content_id"] == row["content_id"]]
+                                if not content_row.empty:
+                                    content_text = content_row.iloc[0]["text"]
+                                    content_title = content_row.iloc[0].get("title", content_title)
+                        except Exception:
+                            # Fallback to metadata if Parquet read fails
+                            pass
+
+                    content = ExtractedContent(text=content_text, title=content_title)
+
+                    # Reconstruct ContentMetadata
+                    metadata_json = row["full_metadata"] or "{}"
+                    try:
+                        metadata_dict = json.loads(metadata_json)
+                    except (json.JSONDecodeError, TypeError):
+                        metadata_dict = {}
+
+                    pub_date = None
+                    if metadata_dict.get("publication_date"):
+                        try:
+                            pub_date = datetime.fromisoformat(metadata_dict["publication_date"])
+                        except (ValueError, TypeError):
+                            pass
+
+                    metadata = ContentMetadata(
+                        url=row["url"],
+                        title=content_title,
+                        description=row["description"] or "",
+                        domain=row["domain"],
+                        author=row["author"] or "",
+                        publication_date=pub_date,
+                        word_count=len(content_text.split()) if content_text else 0,
+                    )
+
+                    # Reconstruct QualityScore
+                    quality = QualityScore(
+                        overall_score=row["quality_score"],
+                        toxicity_score=row["toxicity_score"],
+                        coherence_score=row["coherence_score"],
+                        grammar_score=row["grammar_score"],
+                    )
+
+                    yield (content, metadata, quality)
+
+                except Exception:
+                    # Skip malformed records and continue
+                    continue
 
     async def get_statistics(self) -> Dict[str, Any]:
         """Get storage statistics."""
