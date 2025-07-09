@@ -15,7 +15,6 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-
 from quarrycore.deduplicator import (
     BloomFilterConfig,
     DeduplicationConfig,
@@ -225,10 +224,6 @@ class TestSemanticDeduplication:
             mock_st.return_value = mock_model
             yield mock_st
 
-    @pytest.mark.skipif(
-        not pytest.importorskip("sentence_transformers"),
-        reason="sentence-transformers not installed",
-    )
     def test_semantic_init(self, test_dir, mock_sentencetransformer):
         """Test semantic deduplicator initialization."""
         # Use hardware capabilities that won't trigger Pi mode
@@ -245,10 +240,6 @@ class TestSemanticDeduplication:
         assert semantic.use_gpu is False
         mock_sentencetransformer.assert_called_with("mock-model", device="cpu")
 
-    @pytest.mark.skipif(
-        not pytest.importorskip("sentence_transformers"),
-        reason="sentence-transformers not installed",
-    )
     def test_semantic_similarity(self, test_dir, mock_sentencetransformer):
         """Test semantic similarity detection."""
         # Use hardware capabilities that won't trigger Pi mode
@@ -531,17 +522,36 @@ class TestMultiLevelDeduplicator:
         """Test batch processing capabilities."""
         dedup = MultiLevelDeduplicator(dedup_config, hardware_caps)
 
-        # Create batch of documents
-        docs = []
+        # Create batch of documents with truly distinct content
+        contents = []
+        metadata_list = []
+        distinct_texts = [
+            "The quick brown fox jumps over the lazy dog in the countryside.",
+            "Machine learning algorithms require large datasets for training artificial neural networks.",
+            "Astronomy studies celestial objects, space phenomena, and the evolution of the universe.",
+            "The quick brown fox jumps over the lazy dog in the countryside.",  # Duplicate of first
+            "The quick brown fox jumps over the lazy dog in the countryside.",  # Duplicate of first
+        ]
+
         for i in range(5):
-            text = f"Document {i}" if i < 3 else "Document 0"  # Last 2 are duplicates
+            text = distinct_texts[i]
             meta = ContentMetadata(url=f"https://example.com/batch{i}", domain="general")
             content = ExtractedContent(text=text, title=f"Batch Doc {i}")
-            docs.append((content, meta))
+            contents.append(content)
+            metadata_list.append(meta)
 
         # Process batch
-        with pytest.raises(NotImplementedError):
-            await dedup.check_batch(docs)
+        results = await dedup.check_batch(contents, metadata_list)
+
+        # Verify results
+        assert len(results) == 5
+        # First 3 documents should be unique
+        assert not results[0].is_duplicate
+        assert not results[1].is_duplicate
+        assert not results[2].is_duplicate
+        # Last 2 documents are duplicates of first document
+        assert results[3].is_duplicate
+        assert results[4].is_duplicate
 
     def test_statistics(self, dedup_config, hardware_caps):
         """Test statistics collection."""

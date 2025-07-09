@@ -391,18 +391,29 @@ class MultiLevelDeduplicator(DeduplicatorProtocol):
         """Determine content type from extracted content."""
         return metadata.domain_type.value
 
-    async def check_batch(self, contents: List[ExtractedContent]) -> List[DuplicationResult]:
+    async def check_batch(
+        self, contents: List[ExtractedContent], metadata_list: List[ContentMetadata]
+    ) -> List[DuplicationResult]:
         """
         Check multiple contents for duplicates efficiently.
 
         Args:
             contents: List of extracted contents
+            metadata_list: List of corresponding metadata
 
         Returns:
-            List of DuplicationResult objects
+            List of DuplicationResult objects aligned with input
         """
-        # This method needs to be updated to also accept metadata
-        raise NotImplementedError("check_batch needs to be updated to accept metadata alongside content.")
+        if len(contents) != len(metadata_list):
+            raise ValueError("Contents and metadata lists must have the same length")
+
+        # Process each content-metadata pair
+        results = []
+        for content, metadata in zip(contents, metadata_list, strict=True):
+            result = await self.check_duplicates(content, metadata)
+            results.append(result)
+
+        return results
 
     def get_statistics(self) -> Dict[str, Any]:
         """Get deduplication statistics."""

@@ -7,10 +7,10 @@ from __future__ import annotations
 import logging
 import threading
 from pathlib import Path
-from typing import Any, ClassVar, Literal, cast
+from typing import Any, ClassVar, List, Literal, Optional, cast
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError, validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from quarrycore.protocols import DomainType
@@ -32,35 +32,57 @@ class RateLimiterConfig(BaseModel):
 
 
 class CrawlerConfig(BaseModel):
-    user_agent: str = "QuarryCore/0.1 (AI Data Collector; +http://your-project-website.com)"
-    max_concurrent_requests: int = 10
-    request_delay_ms: int = 100
-    timeout_seconds: int = 30
-    circuit_breaker: CircuitBreakerConfig = Field(default_factory=CircuitBreakerConfig)
-    rate_limiter: RateLimiterConfig = Field(default_factory=RateLimiterConfig)
-    max_depth: int = 3
-    max_pages_per_domain: int = 1000
+    """Crawler configuration."""
+
+    path: Path = Field(default_factory=lambda: Path.home() / ".quarrycore" / "crawler")
+    timeout: float = Field(default=30.0, description="HTTP request timeout in seconds.")
+    retries: int = Field(default=3, description="Number of retry attempts for failed requests.")
+    user_agent: str = Field(
+        default="QuarryCoreBot/1.0 (+https://github.com/shua-ie/QuarryCore)",
+        description="User-Agent string for HTTP requests.",
+    )
+    respect_robots: bool = Field(default=True, description="Whether to respect robots.txt.")
+    concurrent_requests: int = Field(default=10, description="Max concurrent HTTP requests.")
+    rate_limit: float = Field(default=1.0, description="Requests per second per domain.")
+    max_concurrency_per_domain: int = Field(default=2, description="Maximum concurrent requests per domain.")
+    max_retries: int = Field(default=3, description="Maximum retry attempts for failed requests.")
+    backoff_cooldown_seconds: int = Field(default=120, description="Cooldown period after consecutive failures.")
+
+    @field_validator("path", mode="before")
+    @classmethod
+    def create_path(cls, v: str | Path) -> str:
+        path = Path(v)
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)
 
 
 class SQLiteConfig(BaseModel):
     """Configuration for SQLite hot storage."""
 
-    db_path: str = Field(default="./data/quarrycore.db", description="Path to the SQLite database file.")
+    db_path: Path = Field(
+        default_factory=lambda: Path.home() / ".quarrycore" / "data.db",
+        description="SQLite database file path",
+    )
     pool_size: int = Field(default=10, description="Size of the connection pool.")
     wal_mode: bool = Field(default=True, description="Enable Write-Ahead Logging for higher concurrency.")
     fts_version: Literal["fts5"] = Field(default="fts5", description="Full-Text Search module to use.")
 
-    @validator("db_path", pre=True, always=True)
-    def create_parent_dir(cls, v: str | Path) -> str:
-        path = Path(v)
+    @field_validator("db_path", mode="before")
+    @classmethod
+    def ensure_db_directory(cls, v: Any) -> Path:
+        """Ensure database directory exists."""
+        path = Path(v) if not isinstance(v, Path) else v
         path.parent.mkdir(parents=True, exist_ok=True)
-        return str(path)
+        return path
 
 
 class ParquetConfig(BaseModel):
     """Configuration for Parquet warm storage."""
 
-    base_path: str = Field(default="./data/parquet_store", description="Base path for Parquet files.")
+    base_path: Path = Field(
+        default_factory=lambda: Path.home() / ".quarrycore" / "parquet",
+        description="Base directory for Parquet files",
+    )
     compression: Literal["snappy", "gzip", "brotli", "zstd"] = Field(
         default="snappy", description="Compression codec for Parquet files."
     )
@@ -68,12 +90,15 @@ class ParquetConfig(BaseModel):
         default_factory=lambda: ["domain", "date"],
         description="Fields to partition data by.",
     )
+    row_group_size: int = Field(default=50000, description="Target row group size")
 
-    @validator("base_path", pre=True, always=True)
-    def create_path(cls, v: str | Path) -> str:
-        path = Path(v)
+    @field_validator("base_path", mode="before")
+    @classmethod
+    def ensure_parquet_directory(cls, v: Any) -> Path:
+        """Ensure Parquet directory exists."""
+        path = Path(v) if not isinstance(v, Path) else v
         path.mkdir(parents=True, exist_ok=True)
-        return str(path)
+        return path
 
 
 class RetentionConfig(BaseModel):
@@ -83,16 +108,17 @@ class RetentionConfig(BaseModel):
         default=90,
         description="Days after which to move warm data to cold storage. None to disable.",
     )
-    cold_storage_path: str = Field(
-        default="./data/cold_store",
-        description="Path for Zstandard-compressed archives.",
-    )
+    cold_storage_path: Optional[Path] = Field(None, description="Path to cold storage for archived data")
 
-    @validator("cold_storage_path", pre=True, always=True)
-    def create_path(cls, v: str | Path) -> str:
-        path = Path(v)
+    @field_validator("cold_storage_path", mode="before")
+    @classmethod
+    def ensure_cold_storage_directory(cls, v: Any) -> Optional[Path]:
+        """Ensure cold storage directory exists if specified."""
+        if v is None:
+            return None
+        path = Path(v) if not isinstance(v, Path) else v
         path.mkdir(parents=True, exist_ok=True)
-        return str(path)
+        return path
 
 
 class BackupConfig(BaseModel):
@@ -104,7 +130,8 @@ class BackupConfig(BaseModel):
         description="How often to perform backups in hours. None to disable.",
     )
 
-    @validator("path", pre=True, always=True)
+    @field_validator("path", mode="before")
+    @classmethod
     def create_path(cls, v: str | Path) -> str:
         path = Path(v)
         path.mkdir(parents=True, exist_ok=True)
@@ -125,7 +152,8 @@ class BloomFilterConfig(BaseModel):
     capacity: int = 1_000_000
     error_rate: float = 0.001
 
-    @validator("path", pre=True, always=True)
+    @field_validator("path", mode="before")
+    @classmethod
     def create_parent_dir(cls, v: str | Path) -> str:
         path = Path(v)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -137,7 +165,8 @@ class MinHashLSHConfig(BaseModel):
     threshold: float = 0.85
     num_perm: int = 128
 
-    @validator("path", pre=True, always=True)
+    @field_validator("path", mode="before")
+    @classmethod
     def create_parent_dir(cls, v: str | Path) -> str:
         path = Path(v)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -150,7 +179,8 @@ class SemanticDedupConfig(BaseModel):
     threshold: float = 0.95
     batch_size: int = 32
 
-    @validator("index_path", pre=True, always=True)
+    @field_validator("index_path", mode="before")
+    @classmethod
     def create_parent_dir(cls, v: str | Path) -> str:
         path = Path(v)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -210,7 +240,7 @@ class ChunkingConfig(BaseModel):
     """Configuration for token-aware chunking."""
 
     tokenizer_name: str = Field(
-        default="mistralai/Mistral-7B-v0.1",
+        default="gpt2",
         description="HuggingFace tokenizer to use for chunking.",
     )
     chunk_size: int = Field(default=2048, description="Target size of each chunk in tokens.")
@@ -256,7 +286,8 @@ class ExportConfig(BaseModel):
     output_path: str = Field(default="./data/datasets", description="Base path for exported datasets.")
     huggingface_repo_id: str | None = Field(default=None, description="Optional HuggingFace Hub repo ID to push to.")
 
-    @validator("output_path", pre=True, always=True)
+    @field_validator("output_path", mode="before")
+    @classmethod
     def create_data_path(cls, v: str | Path) -> str:
         path = Path(v)
         path.mkdir(parents=True, exist_ok=True)
@@ -264,18 +295,30 @@ class ExportConfig(BaseModel):
 
 
 class DatasetConfig(BaseModel):
-    """Configuration for the intelligent dataset construction pipeline."""
+    """Dataset configuration."""
 
-    name: str = Field(default="quarrycore_dataset", description="Name of the dataset.")
-    max_documents: int | None = Field(
-        default=100000,
-        description="Maximum number of documents to process for the dataset.",
+    output_path: Path = Field(default_factory=lambda: Path.home() / ".quarrycore" / "datasets")
+    formats: list[str] = Field(default=["jsonl", "parquet"], description="Output formats to generate.")
+    compression: str | None = Field(default="gzip", description="Compression algorithm to use.")
+    shard_size: int = Field(default=1_000_000, description="Maximum records per shard.")
+    include_metadata: bool = Field(default=True, description="Include metadata in dataset output.")
+    sampling: Optional[SamplingConfig] = Field(
+        default=None, description="Sampling configuration for dataset construction."
     )
+    chunking: ChunkingConfig = Field(
+        default_factory=ChunkingConfig, description="Configuration for token-aware chunking."
+    )
+    formatting: FormattingConfig = Field(
+        default_factory=FormattingConfig, description="Configuration for output formatting."
+    )
+    export: ExportConfig = Field(default_factory=ExportConfig, description="Configuration for dataset exporting.")
 
-    chunking: ChunkingConfig = Field(default_factory=ChunkingConfig)
-    sampling: SamplingConfig = Field(default_factory=SamplingConfig)
-    formatting: FormattingConfig = Field(default_factory=FormattingConfig)
-    export: ExportConfig = Field(default_factory=ExportConfig)
+    @field_validator("output_path", mode="before")
+    @classmethod
+    def create_path(cls, v: str | Path) -> str:
+        path = Path(v)
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)
 
 
 class DomainConfig(BaseModel):
@@ -308,7 +351,8 @@ class MonitoringConfig(BaseModel):
     )
     web_ui: WebUIConfig = Field(default_factory=WebUIConfig)
 
-    @validator("log_file", pre=True, always=True)
+    @field_validator("log_file", mode="before")
+    @classmethod
     def create_parent_dir(cls, v: str | Path | None) -> str | None:
         if v is None:
             return None

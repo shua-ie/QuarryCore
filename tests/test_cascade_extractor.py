@@ -10,7 +10,6 @@ Comprehensive test suite covering:
 """
 
 import pytest
-
 from quarrycore.extractor.cascade_extractor import CascadeExtractor, ExtractionConfig
 from quarrycore.extractor.confidence_scorer import ConfidenceScorer
 from quarrycore.extractor.content_processors import (

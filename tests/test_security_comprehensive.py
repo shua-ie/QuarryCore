@@ -12,11 +12,11 @@ Tests cover all security aspects including:
 
 import hashlib
 import re
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
-
 from quarrycore.config import ParquetConfig, SQLiteConfig
 from quarrycore.extractor import CascadeExtractor
 from quarrycore.extractor.cascade_extractor import ExtractionConfig
@@ -228,13 +228,14 @@ class TestInputSanitization:
                         await cursor.execute("SELECT COUNT(*) FROM processed_content")
                         count = await cursor.fetchone()
                         # Should have legitimate data only
-                        assert count[0] >= 0
+                        assert count is not None and count[0] >= 0
 
                         # Check for injection evidence
                         await cursor.execute("SELECT url FROM processed_content WHERE url LIKE '%DROP%'")
                         results = await cursor.fetchall()
                         # Should not find SQL injection commands
-                        assert len(results) == 0 or all("DROP TABLE" not in r[0] for r in results)
+                        results_list = list(results)
+                        assert len(results_list) == 0 or all("DROP TABLE" not in r[0] for r in results_list)
 
             except Exception as e:
                 # Exceptions are acceptable for malicious input
@@ -516,11 +517,8 @@ class TestDataPrivacyCompliance:
     @pytest.mark.security
     async def test_gdpr_data_deletion(self, temp_dir):
         """Test GDPR-compliant data deletion using new storage interface."""
-        try:
-            from quarrycore.config.config import StorageConfig
-            from quarrycore.storage import StorageManager
-        except ImportError:
-            pytest.skip("Storage module not available")
+        from quarrycore.config.config import StorageConfig
+        from quarrycore.storage import StorageManager
 
         config = StorageConfig()
         config.hot.db_path = temp_dir / "test_gdpr.db"
@@ -557,13 +555,10 @@ class TestDataPrivacyCompliance:
     @pytest.mark.security
     async def test_data_export_for_gdpr(self, temp_dir):
         """Test GDPR-compliant data export using new storage interface."""
-        try:
-            import json
+        import json
 
-            from quarrycore.config.config import StorageConfig
-            from quarrycore.storage import StorageManager
-        except ImportError:
-            pytest.skip("Storage module not available")
+        from quarrycore.config.config import StorageConfig
+        from quarrycore.storage import StorageManager
 
         config = StorageConfig()
         config.hot.db_path = temp_dir / "test_export.db"
@@ -760,7 +755,7 @@ class TestSecurityMonitoring:
                 manager.logger.info("security_event", event_details=event)
 
         # Verify audit log - updated to handle actual log format
-        if config.log_file and config.log_file.exists():
+        if config.log_file and Path(config.log_file).exists():
             with open(config.log_file, "r") as f:
                 log_content = f.read()
 

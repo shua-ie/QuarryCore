@@ -18,7 +18,6 @@ import sys
 from pathlib import Path
 
 import structlog
-
 from quarrycore.container import DependencyContainer
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")

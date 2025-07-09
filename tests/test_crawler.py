@@ -5,7 +5,6 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
-
 from quarrycore.crawler import AdaptiveCrawler
 from quarrycore.crawler.adaptive_crawler import AdaptiveConfig
 

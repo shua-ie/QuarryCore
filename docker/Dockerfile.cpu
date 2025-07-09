@@ -4,7 +4,7 @@
 # ==============================================================================
 
 # Build stage
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 
 # Set build arguments
 ARG BUILDPLATFORM
@@ -40,12 +40,15 @@ COPY --chown=builder:builder src/ ./src/
 
 # Install dependencies and build wheel
 RUN pip install --no-cache-dir build && \
-    python -m build --wheel && \
-    pip install --no-cache-dir dist/*.whl[performance]
+    python -m build --wheel
+
+# Install the built wheel with performance extras
+RUN WHEEL_FILE=$(ls dist/*.whl) && \
+    pip install --no-cache-dir "${WHEEL_FILE}[performance]"
 
 # ==============================================================================
 # Production stage
-FROM python:3.11-slim as production
+FROM python:3.11-slim AS production
 
 # Metadata
 LABEL maintainer="QuarryCore Team <team@quarrycore.dev>"
@@ -87,7 +90,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 # Add src to Python path for development/testing scenarios
-ENV PYTHONPATH="/app/src:/app:$PYTHONPATH"
+ENV PYTHONPATH="/app/src:/app"
 
 # Performance optimizations
 ENV OMP_NUM_THREADS=1

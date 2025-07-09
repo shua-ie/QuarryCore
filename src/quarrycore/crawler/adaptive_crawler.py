@@ -32,6 +32,7 @@ from ..protocols import (
     create_correlation_id,
 )
 from .circuit_breaker import CircuitBreaker
+from .http_client import HttpClient
 from .rate_limiter import DomainRateLimiter
 from .robots_parser import RobotsCache
 from .user_agents import UserAgentRotator
@@ -91,6 +92,8 @@ class AdaptiveCrawler:
     - Playwright fallback for JavaScript-heavy sites
     """
 
+    _last_loop_id: Optional[int] = None
+
     def __init__(
         self,
         hardware_caps: Optional[HardwareCapabilities] = None,
@@ -133,7 +136,15 @@ class AdaptiveCrawler:
         base_concurrency = max(4, capabilities.cpu_cores * 5)
 
         # Scale based on available memory (more memory = more concurrent connections)
-        memory_factor = min(2.0, capabilities.available_memory_gb / 8.0)
+        # Safety guard: if available_memory_gb is None/0, use total_memory_gb * 0.75 as fallback
+        available_memory = capabilities.available_memory_gb
+        if available_memory is None or available_memory <= 0:
+            available_memory = capabilities.total_memory_gb * 0.75
+            logger.warning(
+                f"available_memory_gb not set or invalid ({capabilities.available_memory_gb}), using fallback: {available_memory}GB"
+            )
+
+        memory_factor = min(2.0, available_memory / 8.0)
 
         # Scale based on hardware type
         hardware_multipliers = {
@@ -148,10 +159,12 @@ class AdaptiveCrawler:
 
         # Calculate final concurrency
         adaptive_concurrency = int(base_concurrency * memory_factor * hardware_factor)
-        self.adaptive_config.max_concurrent_requests = min(adaptive_concurrency, 200)
+        self.adaptive_config.max_concurrent_requests = max(1, min(adaptive_concurrency, 200))  # Ensure at least 1
 
         # Adjust per-domain limits
-        self.adaptive_config.max_concurrent_per_domain = max(2, self.adaptive_config.max_concurrent_requests // 10)
+        self.adaptive_config.max_concurrent_per_domain = max(
+            1, self.adaptive_config.max_concurrent_requests // 10
+        )  # Ensure at least 1
 
         # Adjust request delays based on hardware
         if capabilities.hardware_type == HardwareType.RASPBERRY_PI:
@@ -224,13 +237,32 @@ class AdaptiveCrawler:
         if self._playwright_client:
             await self._playwright_client.close()
 
+        # Clear semaphores
+        self._domain_semaphores.clear()
+
         logger.info("AdaptiveCrawler cleanup completed")
 
     def _get_domain_semaphore(self, domain: str) -> asyncio.Semaphore:
         """Get or create domain-specific semaphore for rate limiting."""
+        try:
+            current_loop = asyncio.get_running_loop()
+            current_loop_id = id(current_loop)
+        except RuntimeError:
+            current_loop_id = None
+
+        # Clear semaphores if we're in a different event loop
+        if not hasattr(self, "_last_loop_id") or self._last_loop_id != current_loop_id:
+            self._domain_semaphores.clear()
+            self._last_loop_id = current_loop_id
+
+        # Create semaphore if needed
         if domain not in self._domain_semaphores:
             self._domain_semaphores[domain] = asyncio.Semaphore(self.adaptive_config.max_concurrent_per_domain)
-        return self._domain_semaphores[domain]
+        else:
+            pass
+
+        semaphore = self._domain_semaphores[domain]
+        return semaphore
 
     def _get_circuit_breaker(self, domain: str) -> CircuitBreaker:
         """Get or create circuit breaker for domain."""
@@ -474,9 +506,9 @@ class AdaptiveCrawler:
         # Use semaphores for concurrency control
         if self._semaphore is None:
             raise RuntimeError("Crawler not initialized. Use async context manager.")
+
         async with self._semaphore:  # Global concurrency limit
-            domain_semaphore = self._get_domain_semaphore(domain)
-            async with domain_semaphore:  # Per-domain concurrency limit
+            async with self._get_domain_semaphore(domain):  # Per-domain concurrency limit
                 # Apply rate limiting
                 await self._rate_limiter.wait_for_domain(domain)
 
@@ -534,7 +566,7 @@ class AdaptiveCrawler:
                 self._rate_limiter.update_from_response(domain, dict(response.headers))
 
                 # Create successful result
-                return CrawlResult(
+                result = CrawlResult(
                     url=url,
                     final_url=str(response.url),
                     status_code=response.status_code,
@@ -559,6 +591,8 @@ class AdaptiveCrawler:
                         avg_cpu_percent=0.0,
                     ),
                 )
+
+                return result
 
     async def crawl_batch(
         self,
@@ -589,7 +623,11 @@ class AdaptiveCrawler:
 
         async def crawl_with_semaphore(url: str) -> CrawlResult:
             async with semaphore:
-                return await self.crawl_url(url)
+                try:
+                    result = await self.crawl_url(url)
+                    return result
+                except Exception:
+                    raise
 
         # Create tasks for all URLs
         tasks = [crawl_with_semaphore(url) for url in urls]

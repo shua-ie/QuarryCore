@@ -163,7 +163,7 @@ def test_config(temp_dir):
     config.monitoring.log_file = temp_dir / "test.log"
 
     # Test-friendly settings
-    config.crawler.max_concurrent_requests = 2
+    config.crawler.concurrent_requests = 2
     config.monitoring.enabled = False  # Disable for most tests
     config.debug.test_mode = True
     config.debug.max_urls_to_process = 100
@@ -175,7 +175,7 @@ def test_config(temp_dir):
 def pi_config(test_config):
     """Configuration optimized for Raspberry Pi."""
     config = test_config
-    config.crawler.max_concurrent_requests = 1
+    config.crawler.concurrent_requests = 1
     config.quality.min_content_length = 50
     return config
 
@@ -184,7 +184,7 @@ def pi_config(test_config):
 def workstation_config(test_config):
     """Configuration optimized for workstation."""
     config = test_config
-    config.crawler.max_concurrent_requests = 20
+    config.crawler.concurrent_requests = 20
     config.quality.min_content_length = 100
     return config
 
@@ -201,6 +201,7 @@ def hardware_caps_pi():
         hardware_type=HardwareType.RASPBERRY_PI,
         cpu_cores=4,
         total_memory_gb=4.0,
+        available_memory_gb=3.0,
         has_gpu=False,
     )
 
@@ -212,6 +213,7 @@ def hardware_caps_workstation():
         hardware_type=HardwareType.WORKSTATION,
         cpu_cores=16,
         total_memory_gb=64.0,
+        available_memory_gb=48.0,
         has_gpu=True,
         gpu_memory_gb=12.0,
     )
@@ -224,6 +226,7 @@ def server_hardware():
         hardware_type=HardwareType.SERVER,
         cpu_cores=64,
         total_memory_gb=128.0,
+        available_memory_gb=96.0,
         has_gpu=True,
         gpu_memory_gb=24.0,
         storage_available_gb=10000.0,
@@ -658,6 +661,156 @@ def ecommerce_content():
         "expected_price": 299.99,
         "expected_rating": 4.8,
         "quality_threshold": 0.80,
+    }
+
+
+# ============================================================================
+# HTTP Client and Container Fixtures
+# ============================================================================
+
+
+@pytest_asyncio.fixture
+async def fresh_container(temp_dir):
+    """Create a fresh dependency container with test configuration."""
+    from quarrycore.config.config import Config
+    from quarrycore.container import DependencyContainer
+
+    # Create test config
+    config = Config()
+    config.storage.hot.db_path = temp_dir / "test.db"
+    config.storage.warm.base_path = temp_dir / "parquet"
+    config.storage.retention.cold_storage_path = temp_dir / "cold"
+    config.storage.backup.path = temp_dir / "backups"
+    config.monitoring.log_file = temp_dir / "test.log"
+    config.monitoring.prometheus_port = None  # Disable prometheus for testing
+    config.crawler.concurrent_requests = 2
+    config.debug.test_mode = True
+    config.debug.max_urls_to_process = 100
+
+    container = DependencyContainer()
+    container.config = config
+    await container.initialize()
+
+    yield container
+
+    await container.shutdown()
+
+
+@pytest_asyncio.fixture
+async def http_client_with_config(temp_dir):
+    """Create HTTP client with test configuration."""
+    from quarrycore.config.config import Config
+    from quarrycore.crawler.http_client import HttpClient
+
+    config = Config()
+    config.crawler.max_retries = 3
+    config.crawler.max_concurrency_per_domain = 2
+    config.crawler.backoff_cooldown_seconds = 1  # Short for testing
+    config.crawler.timeout = 5.0
+    config.crawler.respect_robots = True
+    config.crawler.user_agent = "TestBot/1.0"
+
+    async with HttpClient(config) as client:
+        yield client
+
+
+@pytest_asyncio.fixture
+async def http_client(temp_dir):
+    """Create simple HTTP client for testing."""
+    from quarrycore.config.config import Config
+    from quarrycore.crawler.http_client import HttpClient
+
+    config = Config()
+    config.crawler.max_retries = 3
+    config.crawler.max_concurrency_per_domain = 2
+    config.crawler.backoff_cooldown_seconds = 1  # Short for testing
+    config.crawler.timeout = 5.0
+    config.crawler.respect_robots = False  # Disable for simpler testing
+    config.crawler.user_agent = "TestBot/1.0"
+    config.debug.test_mode = True
+
+    async with HttpClient(config) as client:
+        yield client
+
+
+@pytest.fixture(autouse=True)
+def metrics_reset():
+    """Reset metrics between tests using test mode to avoid registry conflicts."""
+    import os
+    import sys
+
+    # Ensure test mode is enabled for testing
+    original_test_mode = os.environ.get("QUARRY_TEST_MODE", "0")
+    os.environ["QUARRY_TEST_MODE"] = "1"
+
+    # Import (or reload) the metrics module so that QUARRY_TEST_MODE flag is picked up,
+    # but **do not clear the Prometheus REGISTRY** – doing so invalidates existing
+    # collector references held by already-imported test modules.  Instead we simply
+    # reset the internal values of each collector to guarantee isolation.
+
+    if "quarrycore.observability.metrics" in sys.modules:
+        import importlib
+
+        metrics_module = importlib.reload(sys.modules["quarrycore.observability.metrics"])
+    else:
+        from quarrycore.observability import metrics as metrics_module
+
+    # Zero all metric values (counters, gauges, histograms) so each test starts fresh.
+    for _metric in metrics_module.METRICS.values():
+        # Counter / Gauge share the _value attribute with an underlying Value class.
+        if hasattr(_metric, "_value"):
+            try:
+                _metric._value.set(0)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+
+        # Histogram has _sum, _count, and optionally _buckets.
+        if hasattr(_metric, "_sum") and hasattr(_metric, "_count"):
+            try:
+                _metric._sum.set(0)  # type: ignore[attr-defined]
+                _metric._count.set(0)  # type: ignore[attr-defined]
+
+                if hasattr(_metric, "_buckets"):
+                    for bucket in _metric._buckets:  # type: ignore[attr-defined]
+                        bucket.set(0)
+            except Exception:
+                pass
+
+    yield
+
+    # Restore original test mode
+    os.environ["QUARRY_TEST_MODE"] = original_test_mode
+
+
+@pytest.fixture
+def deterministic_jitter():
+    """Make backoff jitter deterministic for testing."""
+    import random
+    from unittest.mock import patch
+
+    # Fixed jitter values for predictable testing
+    jitter_values = [1.0, 1.1, 0.9, 1.05, 0.95]
+    jitter_index = 0
+
+    def mock_uniform(a, b):
+        nonlocal jitter_index
+        # Return from fixed sequence
+        value = jitter_values[jitter_index % len(jitter_values)]
+        jitter_index += 1
+        return value
+
+    with patch("random.uniform", side_effect=mock_uniform):
+        yield
+
+
+@pytest.fixture
+def mock_robots_txt():
+    """Mock robots.txt responses for testing."""
+    return {
+        "allowed": "User-agent: *\nAllow: /",
+        "disallowed": "User-agent: *\nDisallow: /",
+        "specific_disallow": "User-agent: *\nDisallow: /private/\nAllow: /",
+        "crawl_delay": "User-agent: *\nCrawl-delay: 1\nAllow: /",
     }
 
 

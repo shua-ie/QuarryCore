@@ -10,7 +10,11 @@ import time
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import psutil
-from prometheus_client import Counter, Gauge, Histogram, start_http_server
+from prometheus_client import REGISTRY as _PROM_REGISTRY
+from prometheus_client import Counter as _OrigCounter
+from prometheus_client import Gauge as _OrigGauge
+from prometheus_client import Histogram as _OrigHistogram
+from prometheus_client import start_http_server
 
 if TYPE_CHECKING:
     from quarrycore.config.config import MonitoringConfig
@@ -26,8 +30,39 @@ except ImportError:
 
 # --- Metric Definitions ---
 
-# Disable metrics in test mode to prevent conflicts
+# Enable metrics in test mode for proper testing
 _TEST_MODE = os.environ.get("QUARRY_TEST_MODE", "0") == "1"
+
+# ---------------------------------------------------------------------------
+# Duplicate-safe Prometheus metric wrappers
+# ---------------------------------------------------------------------------
+# The wrappers are *defined before* any metric creation so that the subsequent
+# module-level `_create_metrics()` invocation can freely use the conventional
+# Counter / Gauge / Histogram symbols without risking duplicate registration
+# errors when the module is imported multiple times during the test suite.
+
+
+def _duplicate_safe_factory(metric_cls):
+    """Return a factory that reuses an existing collector if already present."""
+
+    def _factory(name: str, documentation: str, *args, **kwargs):  # type: ignore[override]
+        existing = _PROM_REGISTRY._names_to_collectors.get(name)
+        if existing is not None:
+            return existing  # type: ignore[return-value]
+
+        try:
+            return metric_cls(name, documentation, *args, **kwargs)  # type: ignore[call-arg]
+        except ValueError:
+            # Registration lost the race – fall back to the now-existing collector.
+            return _PROM_REGISTRY._names_to_collectors[name]  # type: ignore[return-value]
+
+    return _factory
+
+
+# Public aliases for general use.
+Counter = _duplicate_safe_factory(_OrigCounter)  # type: ignore[assignment]
+Gauge = _duplicate_safe_factory(_OrigGauge)  # type: ignore[assignment]
+Histogram = _duplicate_safe_factory(_OrigHistogram)  # type: ignore[assignment]
 
 # Using a 'quarrycore' prefix for all custom metrics
 METRICS: Dict[str, Any] = {}
@@ -35,11 +70,82 @@ METRICS: Dict[str, Any] = {}
 
 def _create_metrics() -> Dict[str, Any]:
     """Create metrics with duplicate handling."""
-    from prometheus_client import REGISTRY
+
+    # In test mode, always create fresh metrics
+    if _TEST_MODE:
+        return {
+            "documents_processed": Counter(
+                "quarrycore_documents_processed_total",
+                "Total number of documents processed by the pipeline",
+                ["pipeline_stage"],
+            ),
+            "documents_in_flight": Gauge(
+                "quarrycore_documents_in_flight",
+                "Number of documents currently being processed",
+            ),
+            "processing_duration_seconds": Histogram(
+                "quarrycore_processing_duration_seconds",
+                "Time taken to process a document through a pipeline stage",
+                ["pipeline_stage"],
+            ),
+            "quality_score": Histogram(
+                "quarrycore_quality_score",
+                "Distribution of document quality scores",
+                ["domain"],
+            ),
+            "cpu_usage_percent": Gauge(
+                "quarrycore_cpu_usage_percent",
+                "Current CPU utilization of the system",
+            ),
+            "memory_usage_percent": Gauge(
+                "quarrycore_memory_usage_percent",
+                "Current memory utilization of the system",
+            ),
+            "gpu_usage_percent": Gauge(
+                "quarrycore_gpu_usage_percent",
+                "Current GPU utilization",
+                ["gpu_id"],
+            ),
+            "gpu_memory_percent": Gauge(
+                "quarrycore_gpu_memory_percent",
+                "Current GPU memory utilization",
+                ["gpu_id"],
+            ),
+            "gpu_temperature_celsius": Gauge(
+                "quarrycore_gpu_temperature_celsius",
+                "Current GPU temperature",
+                ["gpu_id"],
+            ),
+            "resource_efficiency": Gauge(
+                "quarrycore_resource_efficiency",
+                "Resource utilization efficiency score",
+            ),
+            "system_load": Gauge(
+                "quarrycore_system_load",
+                "System load average",
+            ),
+            # Crawler-specific metrics
+            "crawler_fetch_latency_seconds": Histogram(
+                "quarrycore_crawler_fetch_latency_seconds",
+                "Time taken to fetch a URL including retries",
+                buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0],
+            ),
+            "crawler_responses_total": Counter(
+                "quarrycore_crawler_responses_total", "Total number of HTTP responses by status class", ["status_class"]
+            ),
+            "crawler_in_flight_requests": Gauge(
+                "quarrycore_crawler_in_flight_requests",
+                "Number of HTTP requests currently in flight",
+            ),
+            "crawler_domain_backoff_total": Counter(
+                "quarrycore_crawler_domain_backoff_total",
+                "Total number of domains that entered backoff/cooldown",
+            ),
+        }
 
     # Check if metrics are already registered
-    for collector in list(REGISTRY._collector_to_names.keys()):
-        collector_names = REGISTRY._collector_to_names.get(collector, set())
+    for collector in list(_PROM_REGISTRY._collector_to_names.keys()):
+        collector_names = _PROM_REGISTRY._collector_to_names.get(collector, set())
         if any(name.startswith("quarrycore_") for name in collector_names):
             # Metrics already exist, return empty dict
             return {}
@@ -96,14 +202,31 @@ def _create_metrics() -> Dict[str, Any]:
                 "quarrycore_system_load",
                 "System load average",
             ),
+            # Crawler-specific metrics
+            "crawler_fetch_latency_seconds": Histogram(
+                "quarrycore_crawler_fetch_latency_seconds",
+                "Time taken to fetch a URL including retries",
+                buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0],
+            ),
+            "crawler_responses_total": Counter(
+                "quarrycore_crawler_responses_total", "Total number of HTTP responses by status class", ["status_class"]
+            ),
+            "crawler_in_flight_requests": Gauge(
+                "quarrycore_crawler_in_flight_requests",
+                "Number of HTTP requests currently in flight",
+            ),
+            "crawler_domain_backoff_total": Counter(
+                "quarrycore_crawler_domain_backoff_total",
+                "Total number of domains that entered backoff/cooldown",
+            ),
         }
     except Exception as e:
         print(f"Error creating metrics: {e}")
         return {}
 
 
-if not _TEST_MODE:
-    METRICS = _create_metrics()
+# Always create metrics
+METRICS = _create_metrics()
 
 
 class GpuMonitor(threading.Thread):
@@ -160,7 +283,8 @@ class GpuMonitor(threading.Thread):
             except Exception as e:
                 print(f"GPU Monitor: Error collecting metrics: {e}")
 
-            time.sleep(self.interval)
+            # Use event wait with timeout instead of blocking sleep for cooperative shutdown
+            self._stop_event.wait(timeout=self.interval)
 
     def stop(self) -> None:
         """Stop the GPU monitoring thread."""

@@ -3,15 +3,15 @@ FastAPI application for the QuarryCore real-time web dashboard.
 
 Now with production-grade security, authentication, and monitoring.
 """
-
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, AsyncGenerator, Callable, Dict
+from typing import Any, AsyncGenerator, Callable, Dict, Optional
 from uuid import uuid4
 
 import psutil
@@ -28,10 +28,12 @@ except ImportError:
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 from prometheus_client import generate_latest
 
-from quarrycore.auth import User, UserRole, get_current_user
-from quarrycore.monitoring import AuditLogger, init_tracing, register_business_metrics
+from quarrycore.auth import AuthenticationMiddleware, User, UserRole, get_current_user
+from quarrycore.monitoring import AuditLogger, BusinessMetrics, init_tracing, register_business_metrics
+from quarrycore.observability.metrics import METRICS
 from quarrycore.protocols import SystemMetrics
 from quarrycore.security import ProductionRateLimiter, RateLimitMiddleware, SecurityHeadersMiddleware
 
@@ -47,7 +49,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage application lifecycle."""
     # Startup
     print("Starting QuarryCore Web Dashboard...")
-    business_metrics.set_system_info(version="1.0.0", service="quarrycore-web", environment="production")
+    business_metrics.set_system_info(version="0.1.0", service="quarrycore-web", environment="production")
 
     yield
 
@@ -59,7 +61,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(
     title="QuarryCore Monitoring Dashboard",
-    version="1.0.0",
+    version="0.1.0",
     lifespan=lifespan,
 )
 
@@ -181,7 +183,7 @@ async def health_check() -> Dict[str, Any]:
     return {
         "status": "healthy",
         "timestamp": time.time(),
-        "version": "1.0.0",
+        "version": "0.1.0",
         "components": {
             "database": "healthy",
             "cache": "healthy",
@@ -194,9 +196,7 @@ async def health_check() -> Dict[str, Any]:
 
 
 @app.post("/api/pipeline/start")
-async def start_pipeline(
-    current_user: User = Depends(get_current_user),
-) -> Dict[str, Any]:
+async def start_pipeline(current_user: User = Depends(get_current_user)) -> Dict[str, Any]:
     """Start the pipeline processing."""
     # Audit log the action
     audit_logger.log_api_access(
@@ -211,10 +211,7 @@ async def start_pipeline(
 
     # Check permissions
     if not current_user.has_any_role(UserRole.ADMIN, UserRole.USER):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient permissions to start pipeline",
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions to start pipeline")
 
     # Start pipeline logic here
     return {
@@ -225,9 +222,7 @@ async def start_pipeline(
 
 
 @app.post("/api/pipeline/stop")
-async def stop_pipeline(
-    current_user: User = Depends(get_current_user),
-) -> Dict[str, Any]:
+async def stop_pipeline(current_user: User = Depends(get_current_user)) -> Dict[str, Any]:
     """Stop the pipeline processing."""
     # Audit log the action
     audit_logger.log_api_access(
@@ -242,10 +237,7 @@ async def stop_pipeline(
 
     # Check permissions
     if not current_user.has_any_role(UserRole.ADMIN, UserRole.USER):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient permissions to stop pipeline",
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions to stop pipeline")
 
     # Stop pipeline logic here
     return {
@@ -256,9 +248,7 @@ async def stop_pipeline(
 
 
 @app.get("/api/pipeline/status")
-async def get_pipeline_status(
-    current_user: User = Depends(get_current_user),
-) -> Dict[str, Any]:
+async def get_pipeline_status(current_user: User = Depends(get_current_user)) -> Dict[str, Any]:
     """Get current pipeline status."""
     # Basic read permission - all authenticated users can view status
     # Get total documents processed
@@ -278,21 +268,29 @@ async def get_pipeline_status(
 
 
 @app.get("/api/stats/failures")
-async def get_failure_stats(
-    current_user: User = Depends(get_current_user),
-) -> Dict[str, Any]:
+async def get_failure_stats(current_user: User = Depends(get_current_user)) -> Dict[str, Any]:
     """Get failure statistics."""
-    # TODO: Connect to dead letter queue for real stats
-    return {
-        "total_failures": 127,
-        "failures_by_stage": {
-            "crawl": 45,
-            "extract": 32,
-            "quality": 50,
-        },
-        "retryable_failures": 89,
-        "permanent_failures": 38,
-    }
+    # Import here to avoid circular imports
+    from quarrycore.container import DependencyContainer
+
+    # Create a container instance to get the dead letter service
+    container = DependencyContainer()
+    await container.initialize()
+
+    try:
+        dead_letter_service = await container.get_dead_letter()
+        return await dead_letter_service.failure_stats()
+    except Exception as e:
+        # Fallback to mock data if service fails
+        return {
+            "total_failures": 0,
+            "failures_by_stage": {},
+            "retryable_failures": 0,
+            "permanent_failures": 0,
+            "error": f"Service unavailable: {str(e)}",
+        }
+    finally:
+        await container.shutdown()
 
 
 @app.post("/api/config/update")

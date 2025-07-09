@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from quarrycore.config import QualityConfig
 from quarrycore.quality import QualityAssessor
 

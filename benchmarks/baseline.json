@@ -1,0 +1,37 @@
+{
+  "benchmark_info": {
+    "timestamp": 1751596852.4724715,
+    "version": "1.0.0",
+    "test_type": "1k_url_crawl",
+    "description": "Baseline performance for 1000 URL crawling test"
+  },
+  "system_info": {
+    "python_version": "3.11",
+    "platform": "linux",
+    "cpu_cores": 8,
+    "memory_gb": 16
+  },
+  "performance_metrics": {
+    "total_urls": 1000,
+    "total_duration_seconds": 73.2,
+    "urls_per_second": 13.67,
+    "urls_per_minute": 820.0,
+    "success_rate": 0.95,
+    "average_response_time_ms": 150,
+    "memory_peak_mb": 245,
+    "cpu_avg_percent": 45.2
+  },
+  "detailed_metrics": {
+    "extraction_time_ms": 45.3,
+    "storage_time_ms": 12.1,
+    "quality_assessment_ms": 8.7,
+    "deduplication_ms": 5.2,
+    "network_time_ms": 87.4
+  },
+  "test_conditions": {
+    "concurrent_workers": 10,
+    "rate_limit_rps": 5.0,
+    "timeout_seconds": 30.0,
+    "retry_attempts": 3
+  }
+}

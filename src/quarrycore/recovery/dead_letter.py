@@ -140,8 +140,10 @@ class DeadLetterQueue:
                 last_failure_time TEXT NOT NULL,
                 next_retry_time TEXT,
                 is_retryable INTEGER DEFAULT 1,
+                failure_count INTEGER DEFAULT 1,
                 metadata TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(url, failure_stage)
             )
         """
         )
@@ -383,17 +385,29 @@ class DeadLetterQueue:
                 break
 
     async def _store_failed_document(self, doc: FailedDocument) -> None:
-        """Store a failed document in the database."""
+        """Store a failed document in the database with upsert behavior."""
         if self._db is None:
             return
 
+        # Use UPSERT to handle duplicate (url, failure_stage) combinations
+        # If it's a new failure, insert; if duplicate, increment count and update timestamp
         await self._db.execute(
             """
-            INSERT OR REPLACE INTO failed_documents (
+            INSERT INTO failed_documents (
                 document_id, url, failure_stage, error_type, error_message,
                 error_severity, attempt_count, max_retries, first_failure_time,
-                last_failure_time, next_retry_time, is_retryable, metadata
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                last_failure_time, next_retry_time, is_retryable, failure_count, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+            ON CONFLICT(url, failure_stage) DO UPDATE SET
+                failure_count = failure_count + 1,
+                last_failure_time = excluded.last_failure_time,
+                error_message = excluded.error_message,
+                error_type = excluded.error_type,
+                error_severity = excluded.error_severity,
+                next_retry_time = excluded.next_retry_time,
+                attempt_count = excluded.attempt_count,
+                is_retryable = excluded.is_retryable,
+                metadata = excluded.metadata
         """,
             (
                 str(doc.document_id),
@@ -401,7 +415,7 @@ class DeadLetterQueue:
                 doc.failure_stage,
                 doc.error_info.error_type,
                 doc.error_info.error_message,
-                doc.error_info.severity.value,
+                doc.error_info.severity.value if hasattr(doc.error_info.severity, "value") else doc.error_info.severity,
                 doc.attempt_count,
                 doc.max_retries,
                 doc.first_failure_time.isoformat(),
@@ -455,5 +469,6 @@ class DeadLetterQueue:
             "first_failure_time": row[8],
             "last_failure_time": row[9],
             "next_retry_time": row[10],
-            "metadata": json.loads(row[12]) if row[12] else {},
+            "failure_count": row[12],  # Updated index for failure_count
+            "metadata": json.loads(row[13]) if row[13] else {},  # Updated index for metadata
         }

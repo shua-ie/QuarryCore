@@ -23,7 +23,6 @@ from uuid import UUID, uuid4
 
 import pytest
 from polars import DataFrame
-
 from quarrycore.config import BackupConfig, ParquetConfig, RetentionConfig, SQLiteConfig, StorageConfig
 from quarrycore.protocols import ContentMetadata, DomainType, DuplicationResult, ExtractedContent, QualityScore
 
