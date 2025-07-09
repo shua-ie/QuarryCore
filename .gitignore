@@ -368,3 +368,11 @@ Thumbs.db # IDE specific
 .cursor/
 .vscode/
 .idea/
+
+# Non-documentation markdown files (analysis/reports)
+ANALYSIS_REPORT.md
+PIPELINE_IMPLEMENTATION_SUMMARY.md
+PIPELINE_VALIDATION_COMPLETE.md
+*_REPORT.md
+*_VALIDATION_*.md
+*_ANALYSIS_*.md
