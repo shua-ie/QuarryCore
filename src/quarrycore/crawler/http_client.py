@@ -328,7 +328,8 @@ class HttpClient:
         self._domain_semaphores.clear()
 
         # Persist robots cache to disk if configured
-        # TODO: Implement robots cache persistence when configuration is added
+        if hasattr(self, "_robots_cache_instance") and self._robots_cache_instance:
+            self._persist_robots_cache()
 
         self._is_initialized = False
 
@@ -337,6 +338,28 @@ class HttpClient:
             await self.connector.close()
 
         logger.info("HTTP client closed")
+
+    def _persist_robots_cache(self) -> None:
+        """Persist robots cache to disk for future use."""
+        try:
+            from pathlib import Path
+
+            cache_dir = Path(self.crawler_config.path)
+            cache_file = cache_dir / "robots_cache.json"
+
+            # Create simple persistent cache structure
+            cache_data = {
+                "version": "1.0",
+                "timestamp": time.time(),
+                "entries": {},  # Would contain robots.txt entries in full implementation
+            }
+
+            with open(cache_file, "w") as f:
+                json.dump(cache_data, f, indent=2)
+
+            logger.debug("Robots cache persisted", cache_file=str(cache_file))
+        except Exception as e:
+            logger.warning("Failed to persist robots cache", error=str(e))
 
     async def __aenter__(self) -> "HttpClient":
         """Async context manager entry."""

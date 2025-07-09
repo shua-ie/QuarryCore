@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, ClassVar, List, Literal, Optional, cast
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError, validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from quarrycore.protocols import DomainType
@@ -48,8 +48,8 @@ class CrawlerConfig(BaseModel):
     max_retries: int = Field(default=3, description="Maximum retry attempts for failed requests.")
     backoff_cooldown_seconds: int = Field(default=120, description="Cooldown period after consecutive failures.")
 
-    @validator("path", pre=True, always=True)  # type: ignore[pydantic-validator]
-    # TODO: Migrate to Pydantic V2 @field_validator
+    @field_validator("path", mode="before")
+    @classmethod
     def create_path(cls, v: str | Path) -> str:
         path = Path(v)
         path.mkdir(parents=True, exist_ok=True)
@@ -67,8 +67,8 @@ class SQLiteConfig(BaseModel):
     wal_mode: bool = Field(default=True, description="Enable Write-Ahead Logging for higher concurrency.")
     fts_version: Literal["fts5"] = Field(default="fts5", description="Full-Text Search module to use.")
 
-    @validator("db_path", pre=True, always=True)  # type: ignore[pydantic-validator]
-    # TODO: Migrate to Pydantic V2 @field_validator
+    @field_validator("db_path", mode="before")
+    @classmethod
     def ensure_db_directory(cls, v: Any) -> Path:
         """Ensure database directory exists."""
         path = Path(v) if not isinstance(v, Path) else v
@@ -92,8 +92,8 @@ class ParquetConfig(BaseModel):
     )
     row_group_size: int = Field(default=50000, description="Target row group size")
 
-    @validator("base_path", pre=True, always=True)  # type: ignore[pydantic-validator]
-    # TODO: Migrate to Pydantic V2 @field_validator
+    @field_validator("base_path", mode="before")
+    @classmethod
     def ensure_parquet_directory(cls, v: Any) -> Path:
         """Ensure Parquet directory exists."""
         path = Path(v) if not isinstance(v, Path) else v
@@ -110,8 +110,8 @@ class RetentionConfig(BaseModel):
     )
     cold_storage_path: Optional[Path] = Field(None, description="Path to cold storage for archived data")
 
-    @validator("cold_storage_path", pre=True, always=True)  # type: ignore[pydantic-validator]
-    # TODO: Migrate to Pydantic V2 @field_validator
+    @field_validator("cold_storage_path", mode="before")
+    @classmethod
     def ensure_cold_storage_directory(cls, v: Any) -> Optional[Path]:
         """Ensure cold storage directory exists if specified."""
         if v is None:
@@ -130,7 +130,8 @@ class BackupConfig(BaseModel):
         description="How often to perform backups in hours. None to disable.",
     )
 
-    @validator("path", pre=True, always=True)
+    @field_validator("path", mode="before")
+    @classmethod
     def create_path(cls, v: str | Path) -> str:
         path = Path(v)
         path.mkdir(parents=True, exist_ok=True)
@@ -151,7 +152,8 @@ class BloomFilterConfig(BaseModel):
     capacity: int = 1_000_000
     error_rate: float = 0.001
 
-    @validator("path", pre=True, always=True)
+    @field_validator("path", mode="before")
+    @classmethod
     def create_parent_dir(cls, v: str | Path) -> str:
         path = Path(v)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -163,7 +165,8 @@ class MinHashLSHConfig(BaseModel):
     threshold: float = 0.85
     num_perm: int = 128
 
-    @validator("path", pre=True, always=True)
+    @field_validator("path", mode="before")
+    @classmethod
     def create_parent_dir(cls, v: str | Path) -> str:
         path = Path(v)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -176,7 +179,8 @@ class SemanticDedupConfig(BaseModel):
     threshold: float = 0.95
     batch_size: int = 32
 
-    @validator("index_path", pre=True, always=True)
+    @field_validator("index_path", mode="before")
+    @classmethod
     def create_parent_dir(cls, v: str | Path) -> str:
         path = Path(v)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -282,7 +286,8 @@ class ExportConfig(BaseModel):
     output_path: str = Field(default="./data/datasets", description="Base path for exported datasets.")
     huggingface_repo_id: str | None = Field(default=None, description="Optional HuggingFace Hub repo ID to push to.")
 
-    @validator("output_path", pre=True, always=True)
+    @field_validator("output_path", mode="before")
+    @classmethod
     def create_data_path(cls, v: str | Path) -> str:
         path = Path(v)
         path.mkdir(parents=True, exist_ok=True)
@@ -308,8 +313,8 @@ class DatasetConfig(BaseModel):
     )
     export: ExportConfig = Field(default_factory=ExportConfig, description="Configuration for dataset exporting.")
 
-    @validator("output_path", pre=True, always=True)  # type: ignore[pydantic-validator]
-    # TODO: Migrate to Pydantic V2 @field_validator
+    @field_validator("output_path", mode="before")
+    @classmethod
     def create_path(cls, v: str | Path) -> str:
         path = Path(v)
         path.mkdir(parents=True, exist_ok=True)
@@ -346,7 +351,8 @@ class MonitoringConfig(BaseModel):
     )
     web_ui: WebUIConfig = Field(default_factory=WebUIConfig)
 
-    @validator("log_file", pre=True, always=True)
+    @field_validator("log_file", mode="before")
+    @classmethod
     def create_parent_dir(cls, v: str | Path | None) -> str | None:
         if v is None:
             return None

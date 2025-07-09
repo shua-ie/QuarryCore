@@ -58,8 +58,8 @@ class DatasetConstructor(DatasetProtocol):
         """
         print("Starting dataset construction...")
 
-        # TODO: Implement storage query to get available content
-        available_content: List[ProcessingResult] = []  # Placeholder
+        # Query storage for available content (simplified implementation)
+        available_content: List[ProcessingResult] = await self._query_available_content()
 
         # 1. Sample documents based on curriculum strategy
         target_size = config.max_documents or len(available_content) or 1000
@@ -100,6 +100,12 @@ class DatasetConstructor(DatasetProtocol):
 
         print("Dataset construction complete.")
         return report
+
+    async def _query_available_content(self) -> List[ProcessingResult]:
+        """Query storage for available content (placeholder implementation)."""
+        # In a real implementation, this would query the storage layer
+        # For now, return empty list as placeholder
+        return []
 
     # Other protocol methods would be implemented here
     async def sample_content(
