@@ -196,7 +196,8 @@ class TestDomainFailureTracker:
         remaining = tracker.get_backoff_remaining("example.com")
         assert remaining > 100  # Should be close to 120 seconds
 
-    def test_domain_failure_window_cleanup(self):
+    @pytest.mark.asyncio
+    async def test_domain_failure_window_cleanup(self):
         """Test that old failures are cleaned up from the window."""
         tracker = DomainFailureTracker(threshold=2, window=1.0, backoff_duration=10.0)
 
@@ -204,7 +205,7 @@ class TestDomainFailureTracker:
         tracker.record_failure("example.com")
 
         # Wait for window to expire
-        time.sleep(1.1)
+        await asyncio.sleep(1.1)
 
         # Record another failure - should not trigger backoff since first expired
         tracker.record_failure("example.com")

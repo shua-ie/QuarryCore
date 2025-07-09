@@ -283,7 +283,8 @@ class GpuMonitor(threading.Thread):
             except Exception as e:
                 print(f"GPU Monitor: Error collecting metrics: {e}")
 
-            time.sleep(self.interval)
+            # Use event wait with timeout instead of blocking sleep for cooperative shutdown
+            self._stop_event.wait(timeout=self.interval)
 
     def stop(self) -> None:
         """Stop the GPU monitoring thread."""

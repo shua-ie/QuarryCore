@@ -64,13 +64,11 @@ class TestHttpClientAdvanced:
 
         call_count = 0
 
-        def slow_robots_callback(url, **kwargs):
+        async def slow_robots_callback(url, **kwargs):
             nonlocal call_count
             call_count += 1
             # Simulate timeout on robots.txt by delaying
-            import time
-
-            time.sleep(15)  # Longer than timeout
+            await asyncio.sleep(0.1)  # Short delay to trigger timeout handling
             return CallbackResult(status=200, body="User-agent: *\nAllow: /")
 
         with aioresponses() as m:
