@@ -29,15 +29,11 @@ class Formatter:
             return [self._to_instruction_format(chunk) for chunk in chunks]
         elif self.config.format_type == "document":
             return [{"text": chunk} for chunk in chunks]
-        elif self.config.format_type == "jsonl":
-            return [{"text": chunk, "format": "jsonl"} for chunk in chunks]
-        elif self.config.format_type == "parquet":
-            return [{"text": chunk, "format": "parquet"} for chunk in chunks]
         elif self.config.format_type == "conversation":
             return [self._to_conversation_format(chunk) for chunk in chunks]
         else:
             raise ValueError(
-                f"Unsupported format type: '{self.config.format_type}'. Supported formats: instruction, document, jsonl, parquet, conversation"
+                f"Unsupported format type: '{self.config.format_type}'. Supported formats: instruction, document, conversation"
             )
 
     def _to_instruction_format(self, text: str) -> Dict[str, str]:

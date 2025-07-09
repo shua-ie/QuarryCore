@@ -291,9 +291,10 @@ class DatasetConstructor(DatasetProtocol):
 
         # Calculate quality stats
         if validation_results["total_files"] > 0:
+            file_sizes: List[int] = validation_results["file_sizes"]  # type: ignore
             validation_results["quality_stats"] = {
-                "avg_file_size": sum(validation_results["file_sizes"]) / len(validation_results["file_sizes"]),
-                "total_size_mb": sum(validation_results["file_sizes"]) / (1024 * 1024),
+                "avg_file_size": sum(file_sizes) / len(file_sizes),
+                "total_size_mb": sum(file_sizes) / (1024 * 1024),
                 "records_per_file": validation_results["total_records"] / validation_results["total_files"],
                 "error_rate": len(validation_results["format_errors"]) / validation_results["total_files"],
             }
