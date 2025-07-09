@@ -1,45 +1,52 @@
 {
-  "duration_seconds": 44.92499804496765,
+  "duration_seconds": 3.8376827239990234,
   "total_urls": 1000,
-  "processed_count": 0,
-  "failed_count": 272,
-  "throughput_urls_per_second": 0.0,
-  "avg_time_per_url_ms": 0,
+  "processed_count": 1000,
+  "failed_count": 0,
+  "throughput_urls_per_second": 260.5739118938834,
+  "avg_time_per_url_ms": 3.8376827239990234,
   "stage_stats": {
     "crawl": {
-      "count": 272,
-      "avg_duration": 1.0726391716915018,
-      "min_duration": 4.3392181396484375e-05,
-      "max_duration": 33.35912799835205,
-      "total_duration": 291.7578547000885
+      "count": 1000,
+      "avg_duration": 0.001494189739227295,
+      "min_duration": 4.220008850097656e-05,
+      "max_duration": 0.1244502067565918,
+      "total_duration": 1.494189739227295
     },
     "extract": {
-      "count": 272,
-      "avg_duration": 0.0015225121203590842,
-      "min_duration": 5.459785461425781e-05,
-      "max_duration": 0.04005312919616699,
-      "total_duration": 0.4141232967376709
+      "count": 1000,
+      "avg_duration": 0.00011527371406555176,
+      "min_duration": 7.176399230957031e-05,
+      "max_duration": 0.02584528923034668,
+      "total_duration": 0.11527371406555176
     },
     "metadata": {
-      "count": 272,
-      "avg_duration": 6.538103608524099e-05,
-      "min_duration": 7.867813110351562e-06,
-      "max_duration": 0.0011048316955566406,
-      "total_duration": 0.017783641815185547
+      "count": 1000,
+      "avg_duration": 0.0001356174945831299,
+      "min_duration": 7.3909759521484375e-06,
+      "max_duration": 0.12235236167907715,
+      "total_duration": 0.13561749458312988
     },
     "deduplicate": {
-      "count": 272,
-      "avg_duration": 5.151243770823759e-05,
-      "min_duration": 5.4836273193359375e-06,
-      "max_duration": 0.0009753704071044922,
-      "total_duration": 0.014011383056640625
+      "count": 1000,
+      "avg_duration": 7.327795028686523e-06,
+      "min_duration": 5.0067901611328125e-06,
+      "max_duration": 0.0003647804260253906,
+      "total_duration": 0.0073277950286865234
     },
     "quality": {
-      "count": 3,
-      "avg_duration": 0.0009927749633789062,
-      "min_duration": 0.00015735626220703125,
-      "max_duration": 0.0024666786193847656,
-      "total_duration": 0.0029783248901367188
+      "count": 1000,
+      "avg_duration": 9.340763092041015e-06,
+      "min_duration": 7.152557373046875e-06,
+      "max_duration": 5.364418029785156e-05,
+      "total_duration": 0.009340763092041016
+    },
+    "storage": {
+      "count": 1000,
+      "avg_duration": 1.0909795761108399e-05,
+      "min_duration": 5.9604644775390625e-06,
+      "max_duration": 0.0003981590270996094,
+      "total_duration": 0.010909795761108398
     }
   }
 }

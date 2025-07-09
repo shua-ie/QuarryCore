@@ -333,6 +333,7 @@ disable_error_code = [
 # Note: pytest configuration moved to end of file to avoid duplication
 
 [tool.coverage.run]
+branch = true
 source = ["quarrycore"]
 omit = [
     "*/tests/*",
