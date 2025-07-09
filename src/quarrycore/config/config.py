@@ -90,7 +90,7 @@ class ParquetConfig(BaseModel):
         default_factory=lambda: ["domain", "date"],
         description="Fields to partition data by.",
     )
-    row_group_size: int = Field(50000, description="Target row group size")
+    row_group_size: int = Field(default=50000, description="Target row group size")
 
     @validator("base_path", pre=True, always=True)  # type: ignore[pydantic-validator]
     # TODO: Migrate to Pydantic V2 @field_validator

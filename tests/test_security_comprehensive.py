@@ -12,6 +12,7 @@ Tests cover all security aspects including:
 
 import hashlib
 import re
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -227,13 +228,14 @@ class TestInputSanitization:
                         await cursor.execute("SELECT COUNT(*) FROM processed_content")
                         count = await cursor.fetchone()
                         # Should have legitimate data only
-                        assert count[0] >= 0
+                        assert count is not None and count[0] >= 0
 
                         # Check for injection evidence
                         await cursor.execute("SELECT url FROM processed_content WHERE url LIKE '%DROP%'")
                         results = await cursor.fetchall()
                         # Should not find SQL injection commands
-                        assert len(results) == 0 or all("DROP TABLE" not in r[0] for r in results)
+                        results_list = list(results)
+                        assert len(results_list) == 0 or all("DROP TABLE" not in r[0] for r in results_list)
 
             except Exception as e:
                 # Exceptions are acceptable for malicious input
@@ -753,7 +755,7 @@ class TestSecurityMonitoring:
                 manager.logger.info("security_event", event_details=event)
 
         # Verify audit log - updated to handle actual log format
-        if config.log_file and config.log_file.exists():
+        if config.log_file and Path(config.log_file).exists():
             with open(config.log_file, "r") as f:
                 log_content = f.read()
 

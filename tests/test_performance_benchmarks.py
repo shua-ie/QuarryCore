@@ -344,7 +344,7 @@ class TestThroughputBenchmarks:
         # Assertions
         assert sustained_throughput >= 1000, f"Sustained throughput too low: {sustained_throughput:.1f} docs/min"
         assert memory_growth < 1000, f"Memory growth too high: {memory_growth:.1f}MB"
-        assert mock_stats["memory_usage_mb"]["max"] < 20000, "Memory usage exceeds limits"
+        assert mock_stats is not None and mock_stats["memory_usage_mb"]["max"] < 20000, "Memory usage exceeds limits"
 
         print(f"Sustained Performance: {sustained_throughput:.1f} docs/min, {memory_growth:.1f}MB memory growth")
 

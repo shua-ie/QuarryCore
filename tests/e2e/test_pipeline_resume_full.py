@@ -299,7 +299,7 @@ async def test_ac04_duplicate_dead_letter_guard(temp_dir):
             row = await cursor.fetchone()
 
         assert row is not None, "Failed document should exist"
-        failure_count, error_message = row
+        failure_count, error_message = row[0], row[1]
         assert failure_count == 2, f"Failure count should be 2 (upserted), got {failure_count}"
         assert error_message == "Connection timeout again", "Error message should be updated"
 
