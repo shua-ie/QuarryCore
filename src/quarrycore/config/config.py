@@ -192,7 +192,34 @@ class FuzzyMatcherConfig(BaseModel):
     threshold: int = Field(default=90, ge=0, le=100)
 
 
+class DedupConfig(BaseModel):
+    """Hybrid Deduplication Configuration."""
+
+    # SQLite exact hash layer
+    sqlite_path: str = Field(default="data/dedup.db", description="SQLite database path for exact hash storage")
+
+    # Redis MinHashLSH layer
+    redis_url: str = Field(default="redis://localhost:6379/0", description="Redis URL for MinHashLSH backend")
+
+    # MinHash configuration
+    minhash_shingle_size: int = Field(default=7, description="Character shingle size for MinHash")
+    minhash_num_perm: int = Field(default=128, description="Number of permutations for MinHash")
+    minhash_threshold: float = Field(default=0.85, description="Jaccard similarity threshold")
+    minhash_enabled: bool = Field(default=True, description="Enable near-duplicate detection")
+
+    @field_validator("sqlite_path", mode="before")
+    @classmethod
+    def create_sqlite_dir(cls, v: str | Path) -> str:
+        path = Path(v)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return str(path)
+
+
 class DeduplicationConfig(BaseModel):
+    # Hybrid deduplication configuration (production system)
+    hybrid: DedupConfig = Field(default_factory=DedupConfig)
+
+    # Legacy configuration (for backward compatibility)
     enabled_levels: list[int] = Field(default=[1, 2, 3])
     bloom_filter: BloomFilterConfig = Field(default_factory=BloomFilterConfig)
     minhash_lsh: MinHashLSHConfig = Field(default_factory=MinHashLSHConfig)

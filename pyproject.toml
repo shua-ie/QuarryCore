@@ -2,6 +2,12 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.version]
+path = "src/quarrycore/__init__.py"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [project]
 name = "quarrycore"
 dynamic = ["version"]
@@ -70,6 +76,7 @@ dependencies = [
     "pybloom-live>=4.0.0",  # Bloom filters for exact matches
     "faiss-cpu>=1.7.4",  # Vector similarity search (CPU - only PyPI option)
     "rapidfuzz>=3.0.0", # For fuzzy matching
+    "fakeredis~=2.21",  # Redis fallback for testing and CI
     
     # Language processing and text normalization
     "langdetect>=1.0.9",

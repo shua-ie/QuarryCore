@@ -696,7 +696,7 @@ class Pipeline:
                 await circuit_breaker.record_failure()
                 raise Exception(f"Metadata extraction failed for {url}: {str(e)}")
 
-            # STAGE 4: DEDUPLICATION CHECK (basic hash-based for now)
+            # STAGE 4: DEDUPLICATION CHECK (hybrid two-layer system)
             stage_start = time.time()
             circuit_breaker = self.circuit_breakers[PipelineStage.DEDUPLICATE.value]
 
@@ -704,16 +704,29 @@ class Pipeline:
                 raise Exception(f"Circuit breaker open for stage {PipelineStage.DEDUPLICATE.value}")
 
             try:
+                # Get hybrid deduplicator from container
+                deduplicator = await self.container.get_deduplicator()
+
+                # Create document object for deduplication
+                from quarrycore.dedup.hybrid_dedup import ExtractResult
+
+                doc = ExtractResult(text=extracted_content.text, html=getattr(extracted_content, "html", ""), url=url)
+
+                # Perform hybrid deduplication check
+                is_duplicate = await deduplicator.is_duplicate(doc)
+
+                # Create result object for pipeline compatibility
                 import hashlib
 
                 content_hash = hashlib.sha256(extracted_content.text.encode()).hexdigest()
 
                 dedup_result = DuplicationResult(
                     content_hash=content_hash,
-                    is_duplicate=False,  # Basic implementation - assume not duplicate
-                    duplicate_type="hash",
-                    confidence_score=0.9,
+                    is_duplicate=is_duplicate,
+                    duplicate_type="hybrid" if is_duplicate else "",
+                    confidence_score=1.0 if is_duplicate else 0.0,
                 )
+
                 await circuit_breaker.record_success()
                 self._record_stage_timing(PipelineStage.DEDUPLICATE.value, time.time() - stage_start)
 
@@ -722,7 +735,15 @@ class Pipeline:
                     from quarrycore.observability import increment
 
                     increment("documents_rejected_total", 1)
+
+                    self.logger.info(
+                        "Document rejected as duplicate",
+                        url=url,
+                        worker_id=worker_id,
+                        duplicate_type=dedup_result.duplicate_type,
+                    )
                     return None
+
             except Exception as e:
                 await circuit_breaker.record_failure()
                 raise Exception(f"Deduplication check failed for {url}: {str(e)}")

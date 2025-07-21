@@ -45,10 +45,11 @@ class TestTransformerGPUPath:
         mock_model.encode.return_value = [[0.5] * 384]  # Mock embedding
         mock_model.max_seq_length = 256
 
-        with patch("quarrycore.quality.scorers.torch", mock_torch), patch(
-            "quarrycore.quality.scorers.SentenceTransformer", return_value=mock_model
-        ), patch("quarrycore.quality.scorers.HAS_ML_LIBS", True), patch(
-            "quarrycore.quality.scorers.cosine_similarity", return_value=[[0.8]]
+        with (
+            patch("quarrycore.quality.scorers.torch", mock_torch),
+            patch("quarrycore.quality.scorers.SentenceTransformer", return_value=mock_model),
+            patch("quarrycore.quality.scorers.HAS_ML_LIBS", True),
+            patch("quarrycore.quality.scorers.cosine_similarity", return_value=[[0.8]]),
         ):
             scorer = TransformerCoherenceScorer(quality_config_cuda)
             score = await scorer.score("This is a test text for coherence scoring.")
@@ -69,10 +70,11 @@ class TestTransformerGPUPath:
         mock_model.encode.return_value = [[0.5] * 384]
         mock_model.max_seq_length = 256
 
-        with patch("quarrycore.quality.scorers.torch", mock_torch), patch(
-            "quarrycore.quality.scorers.SentenceTransformer", return_value=mock_model
-        ), patch("quarrycore.quality.scorers.HAS_ML_LIBS", True), patch(
-            "quarrycore.quality.scorers.cosine_similarity", return_value=[[0.7]]
+        with (
+            patch("quarrycore.quality.scorers.torch", mock_torch),
+            patch("quarrycore.quality.scorers.SentenceTransformer", return_value=mock_model),
+            patch("quarrycore.quality.scorers.HAS_ML_LIBS", True),
+            patch("quarrycore.quality.scorers.cosine_similarity", return_value=[[0.7]]),
         ):
             scorer = TransformerCoherenceScorer(quality_config_cuda)
             score = await scorer.score("Test text")
@@ -92,10 +94,11 @@ class TestTransformerGPUPath:
         mock_model.encode.return_value = [[0.5] * 384]
         mock_model.max_seq_length = 256
 
-        with patch("quarrycore.quality.scorers.torch", mock_torch), patch(
-            "quarrycore.quality.scorers.SentenceTransformer", return_value=mock_model
-        ), patch("quarrycore.quality.scorers.HAS_ML_LIBS", True), patch(
-            "quarrycore.quality.scorers.cosine_similarity", return_value=[[0.85]]
+        with (
+            patch("quarrycore.quality.scorers.torch", mock_torch),
+            patch("quarrycore.quality.scorers.SentenceTransformer", return_value=mock_model),
+            patch("quarrycore.quality.scorers.HAS_ML_LIBS", True),
+            patch("quarrycore.quality.scorers.cosine_similarity", return_value=[[0.85]]),
         ):
             scorer = TransformerCoherenceScorer(quality_config_auto)
             score = await scorer.score("Test text")
@@ -115,10 +118,11 @@ class TestTransformerGPUPath:
         mock_model.encode.return_value = [[0.5] * 384]
         mock_model.max_seq_length = 256
 
-        with patch("quarrycore.quality.scorers.torch", mock_torch), patch(
-            "quarrycore.quality.scorers.SentenceTransformer", return_value=mock_model
-        ), patch("quarrycore.quality.scorers.HAS_ML_LIBS", True), patch(
-            "quarrycore.quality.scorers.cosine_similarity", return_value=[[0.75]]
+        with (
+            patch("quarrycore.quality.scorers.torch", mock_torch),
+            patch("quarrycore.quality.scorers.SentenceTransformer", return_value=mock_model),
+            patch("quarrycore.quality.scorers.HAS_ML_LIBS", True),
+            patch("quarrycore.quality.scorers.cosine_similarity", return_value=[[0.75]]),
         ):
             scorer = TransformerCoherenceScorer(quality_config_cpu)
             score = await scorer.score("Test text")
@@ -142,10 +146,11 @@ class TestTransformerGPUPath:
 
         mock_sentence_transformer = MagicMock(return_value=mock_model)
 
-        with patch("quarrycore.quality.scorers.torch", mock_torch), patch(
-            "quarrycore.quality.scorers.SentenceTransformer", mock_sentence_transformer
-        ), patch("quarrycore.quality.scorers.HAS_ML_LIBS", True), patch(
-            "quarrycore.quality.scorers.cosine_similarity", return_value=[[0.8]]
+        with (
+            patch("quarrycore.quality.scorers.torch", mock_torch),
+            patch("quarrycore.quality.scorers.SentenceTransformer", mock_sentence_transformer),
+            patch("quarrycore.quality.scorers.HAS_ML_LIBS", True),
+            patch("quarrycore.quality.scorers.cosine_similarity", return_value=[[0.8]]),
         ):
             scorer = TransformerCoherenceScorer(quality_config_cuda)
             score = await scorer.score("Test text")
@@ -169,10 +174,11 @@ class TestTransformerGPUPath:
         mock_model = MagicMock()
         mock_model.encode.return_value = [[0.5] * 384]
 
-        with patch("quarrycore.quality.scorers.torch", mock_torch), patch(
-            "quarrycore.quality.scorers.SentenceTransformer", return_value=mock_model
-        ), patch("quarrycore.quality.scorers.HAS_ML_LIBS", True), patch(
-            "quarrycore.quality.scorers.cosine_similarity", return_value=[[0.8]]
+        with (
+            patch("quarrycore.quality.scorers.torch", mock_torch),
+            patch("quarrycore.quality.scorers.SentenceTransformer", return_value=mock_model),
+            patch("quarrycore.quality.scorers.HAS_ML_LIBS", True),
+            patch("quarrycore.quality.scorers.cosine_similarity", return_value=[[0.8]]),
         ):
             scorer = TransformerCoherenceScorer(quality_config_cuda)
             score = await scorer.score("Test text")  # Initialize the model
@@ -205,9 +211,11 @@ class TestTransformerGPUPath:
         mock_torch = MagicMock()
         mock_model = MagicMock()
 
-        with patch("quarrycore.quality.scorers.torch", mock_torch), patch(
-            "quarrycore.quality.scorers.SentenceTransformer", return_value=mock_model
-        ), patch("quarrycore.quality.scorers.HAS_ML_LIBS", True):
+        with (
+            patch("quarrycore.quality.scorers.torch", mock_torch),
+            patch("quarrycore.quality.scorers.SentenceTransformer", return_value=mock_model),
+            patch("quarrycore.quality.scorers.HAS_ML_LIBS", True),
+        ):
             scorer = TransformerCoherenceScorer(quality_config_cpu)
 
             # Test with short text
