@@ -6,9 +6,11 @@ from __future__ import annotations
 
 import asyncio
 import os
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
+import pkg_resources
 import structlog
 
 if TYPE_CHECKING:
@@ -34,7 +36,23 @@ except ImportError:
     SentenceTransformer = None
     cosine_similarity = None
 
+try:
+    import fasttext
+
+    HAS_FASTTEXT = True
+except ImportError:
+    HAS_FASTTEXT = False
+    fasttext = None
+
 logger = structlog.get_logger(__name__)
+
+
+@dataclass
+class Score:
+    """Score result from a scorer."""
+
+    name: str
+    value: float
 
 
 def _resolve_device(setting: str) -> torch.device:
@@ -53,11 +71,97 @@ def _resolve_device(setting: str) -> torch.device:
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+class LengthScorer:
+    """Scores content based on length."""
+
+    name = "length"
+    WEIGHT = 0.3
+
+    async def __call__(self, text: str) -> Score:
+        """Score based on text length."""
+        # Score 1.0 if text is longer than 400 characters
+        score_value = 1.0 if len(text) > 400 else 0.0
+        return Score(self.name, score_value)
+
+
+class LanguageScorer:
+    """Scores content based on language detection."""
+
+    name = "language"
+    WEIGHT = 0.4
+    _lid = None
+
+    def __init__(self):
+        """Initialize language scorer with lazy loading."""
+        self._lid_lock = asyncio.Lock()
+
+    async def _ensure_model_loaded(self):
+        """Lazy load the language detection model."""
+        async with self._lid_lock:
+            if self._lid is None:
+                if _TEST_MODE:
+                    logger.info("Running in test mode, using mock language model")
+                    self._lid = MockLanguageModel()
+                elif not HAS_FASTTEXT:
+                    logger.warning("FastText not available, using mock model")
+                    self._lid = MockLanguageModel()
+                else:
+                    try:
+                        # Try to load from package resources
+                        model_path = pkg_resources.resource_filename("quarrycore.resources", "lid.176.ftz")
+                        self._lid = fasttext.load_model(model_path)
+                    except Exception:
+                        # Fallback to default path
+                        try:
+                            self._lid = fasttext.load_model("resources/lid.176.ftz")
+                        except Exception:
+                            logger.warning("Failed to load FastText model, using mock")
+                            self._lid = MockLanguageModel()
+
+    async def __call__(self, text: str) -> Score:
+        """Score based on language detection."""
+        await self._ensure_model_loaded()
+
+        try:
+            # Clean text for language detection
+            clean_text = text.replace("\n", " ").strip()
+            if not clean_text:
+                return Score(self.name, 0.0)
+
+            if isinstance(self._lid, MockLanguageModel):
+                lang = self._lid.predict(clean_text)
+            else:
+                # FastText prediction
+                predictions = self._lid.predict(clean_text, k=1)
+                lang = predictions[0][0].split("__")[-1] if predictions[0] else "unk"
+
+            # Score 1.0 if English, 0.0 otherwise
+            score_value = 1.0 if lang == "en" else 0.0
+            return Score(self.name, score_value)
+
+        except Exception as e:
+            logger.error("Error in language detection", error=str(e))
+            return Score(self.name, 0.5)  # Default middle score on error
+
+
+class MockLanguageModel:
+    """Mock language model for testing."""
+
+    def predict(self, text: str, k=1):
+        """Mock prediction - returns English for reasonable text."""
+        if len(text) > 20 and text.count(" ") > 2:
+            return (["__label__en"], [0.99])
+        return (["__label__unknown"], [0.5])
+
+
 class TransformerCoherenceScorer:
     """
     Scores text coherence using transformer models with GPU acceleration support.
     Automatically falls back to CPU if CUDA is not available.
     """
+
+    name = "coherence"
+    WEIGHT = 0.3
 
     def __init__(self, config: QualityConfig):
         """Initialize the scorer with device configuration."""
@@ -107,6 +211,11 @@ class TransformerCoherenceScorer:
 
             self._initialized = True
             logger.info("TransformerCoherenceScorer initialized successfully")
+
+    async def __call__(self, text: str) -> Score:
+        """Score the coherence of the given text."""
+        score_value = await self.score(text)
+        return Score(self.name, score_value)
 
     async def score(self, text: str) -> float:
         """
@@ -163,3 +272,11 @@ class TransformerCoherenceScorer:
             self._model = None
             self._reference_embedding = None
             self._initialized = False
+
+
+# List of all available scorers
+ALL_SCORERS = [
+    LengthScorer(),
+    LanguageScorer(),
+    # TransformerCoherenceScorer needs config, will be instantiated by QualityAssessor
+]

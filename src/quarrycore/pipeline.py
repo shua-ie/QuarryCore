@@ -727,16 +727,46 @@ class Pipeline:
                 await circuit_breaker.record_failure()
                 raise Exception(f"Deduplication check failed for {url}: {str(e)}")
 
-            # STAGE 5: QUALITY ASSESSMENT (already done in ExtractorManager)
-            # Since ExtractorManager already performs quality assessment and filtering,
-            # we can skip this stage or use it for additional quality metrics
+            # STAGE 5: QUALITY ASSESSMENT
             stage_start = time.time()
 
-            # Create a mock quality score based on the extraction score
+            # Get quality assessor from container
+            quality_assessor = await self.container.get_quality()
+
+            # Score the extracted text
+            quality_score_value = await quality_assessor.score(extract_result.text)
+
+            # Check against minimum quality threshold
+            min_quality_score = self.container.config.quality.min_score
+            if quality_score_value < min_quality_score:
+                if "quality_reject_total" in self.metrics:
+                    self.metrics["quality_reject_total"].inc()
+
+                self.logger.info(
+                    "quality.reject",
+                    score=quality_score_value,
+                    threshold=min_quality_score,
+                    url=url,
+                    worker_id=worker_id,
+                )
+
+                # Track in state
+                async with self.state_lock:
+                    if self.state:
+                        self.state.failed_count += 1
+
+                return None
+
+            # Create QualityScore object for storage
             from quarrycore.protocols import QualityScore
 
             quality_score = QualityScore(
-                overall_score=extract_result.score, quality_factors={"extraction_quality": extract_result.score}
+                overall_score=quality_score_value,
+                quality_factors={
+                    "length": quality_score_value,  # Will be populated by individual scorers
+                    "language": quality_score_value,
+                    "coherence": quality_score_value,
+                },
             )
 
             self._record_stage_timing(PipelineStage.QUALITY.value, time.time() - stage_start)
