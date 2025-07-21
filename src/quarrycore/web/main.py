@@ -3,6 +3,7 @@ FastAPI application for the QuarryCore real-time web dashboard.
 
 Now with production-grade security, authentication, and monitoring.
 """
+
 from __future__ import annotations
 
 import asyncio

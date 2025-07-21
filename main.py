@@ -5,6 +5,7 @@ Production entry point for QuarryCore.
 This file serves as the main entry point for production deployments,
 providing health checks, graceful shutdown, and proper error handling.
 """
+
 from __future__ import annotations
 
 import asyncio

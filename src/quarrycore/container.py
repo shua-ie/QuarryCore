@@ -20,6 +20,7 @@ from quarrycore.config import Config
 if TYPE_CHECKING:
     from quarrycore.crawler.http_client import HttpClient
     from quarrycore.dataset import DatasetConstructor
+    from quarrycore.extractor import ExtractorManager
     from quarrycore.observability import ObservabilityManager
     from quarrycore.quality import QualityAssessor
     from quarrycore.recovery.dead_letter_service import SQLiteDeadLetterService
@@ -67,7 +68,13 @@ class ConfigWatcher(FileSystemEventHandler):
     def on_modified(self, event: FileSystemEvent) -> None:
         if not event.is_directory and str(event.src_path).endswith((".yaml", ".yml")):
             self.logger.info("Configuration file changed, reloading", path=event.src_path)
-            asyncio.create_task(self.container.reload_config())
+            try:
+                loop = asyncio.get_running_loop()
+                if not loop.is_closed():
+                    loop.create_task(self.container.reload_config())
+            except RuntimeError:
+                # No event loop running - skip reload
+                self.logger.debug("Config change detected but no event loop available for reload")
 
 
 class DependencyContainer:
@@ -132,6 +139,7 @@ class DependencyContainer:
         # Import modules only when needed to avoid circular imports
         from quarrycore.crawler.http_client import HttpClient
         from quarrycore.dataset import DatasetConstructor
+        from quarrycore.extractor import ExtractorManager
         from quarrycore.observability import ObservabilityManager
         from quarrycore.quality import QualityAssessor
         from quarrycore.recovery.dead_letter_service import SQLiteDeadLetterService
@@ -149,6 +157,10 @@ class DependencyContainer:
             ),
             # Add other modules as they become available
         }
+
+        # ExtractorManager needs quality assessor, so create it after
+        quality_assessor = await self._instances["quality"].get()
+        self._instances["extractor_manager"] = LazyInstance(ExtractorManager, quality_assessor, self.config.extraction)
 
     async def reload_config(self) -> None:
         """Hot-reload configuration and reinitialize affected modules."""
@@ -190,6 +202,11 @@ class DependencyContainer:
         """Get the dead letter service instance."""
         async with self._instances_lock:
             return await self._instances["dead_letter"].get()  # type: ignore
+
+    async def get_extractor_manager(self) -> ExtractorManager:
+        """Get the extractor manager instance."""
+        async with self._instances_lock:
+            return await self._instances["extractor_manager"].get()  # type: ignore
 
     @asynccontextmanager
     async def lifecycle(self) -> AsyncIterator[DependencyContainer]:
@@ -243,8 +260,25 @@ class DependencyContainer:
         """Set up signal handlers for graceful shutdown."""
 
         def signal_handler(signum: int, frame: Any) -> None:
+            # Skip if already shutting down
+            if not self.is_running:
+                return
+
             self.logger.info(f"Received signal {signum}, initiating shutdown")
-            asyncio.create_task(self.shutdown())
+            try:
+                loop = asyncio.get_running_loop()
+                # Only create task if loop is still running
+                if not loop.is_closed():
+                    loop.create_task(self.shutdown())
+            except RuntimeError:
+                # Signal arrived on a non-async thread or no loop
+                # Only attempt sync shutdown if still running
+                if self.is_running:
+                    try:
+                        asyncio.run(self.shutdown())
+                    except RuntimeError:
+                        # Already in an event loop or other issue
+                        self.logger.debug("Could not perform async shutdown from signal handler")
 
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)

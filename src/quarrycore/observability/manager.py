@@ -116,7 +116,9 @@ class ObservabilityManager(ObservabilityProtocol):
         metrics: PerformanceMetrics,
         correlation_id: UUID | None = None,
     ) -> None:
-        METRICS["processing_duration_seconds"].labels(pipeline_stage=component).observe(metrics.total_duration_ms / 1000)  # type: ignore
+        METRICS["processing_duration_seconds"].labels(pipeline_stage=component).observe(
+            metrics.total_duration_ms / 1000
+        )  # type: ignore
         self.logger.info(
             "performance_metric",
             component=component,

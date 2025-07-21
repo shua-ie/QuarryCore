@@ -5,16 +5,124 @@ Provides atomic file operations that work reliably on both Linux and Windows
 with proper fallback mechanisms for different filesystem scenarios.
 """
 
+import asyncio
 import json
 import os
 import shutil
 import tempfile
+import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import structlog
 
 logger = structlog.get_logger(__name__)
+
+
+async def atomic_json_dump(data: Any, path: Path, timeout: float = 2.0) -> bool:
+    """
+    Asynchronously write JSON data to a file atomically with timeout.
+
+    Args:
+        data: Data to serialize as JSON
+        path: Target file path
+        timeout: Maximum time to wait for write operation
+
+    Returns:
+        bool: True if write succeeded, False otherwise
+
+    Notes:
+        - Guarantees cleanup of temporary files even on timeout
+        - Logs warnings on failure but doesn't raise exceptions
+    """
+    path = Path(path)
+    temp_file_path = None
+
+    try:
+        # Ensure parent directory exists
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Serialize data first to catch JSON errors early
+        try:
+            json_content = json.dumps(data, indent=2, ensure_ascii=False)
+        except (TypeError, ValueError) as e:
+            logger.warning(f"Cannot serialize data to JSON: {e}", path=str(path))
+            return False
+
+        # Create temp file with a unique name
+        temp_fd, temp_file_path = tempfile.mkstemp(dir=path.parent, prefix=f".atomic_{path.name}.", suffix=".tmp")
+
+        # Close the file descriptor immediately - we'll write using path
+        os.close(temp_fd)
+        temp_file_path = Path(temp_file_path)
+
+        # Write content asynchronously with timeout
+        loop = asyncio.get_event_loop()
+
+        async def write_and_replace():
+            # Write content
+            await loop.run_in_executor(None, temp_file_path.write_text, json_content, "utf-8")
+            # Atomic replace
+            await loop.run_in_executor(None, os.replace, str(temp_file_path), str(path))
+
+        await asyncio.wait_for(write_and_replace(), timeout=timeout)
+
+        # Clean up any stale atomic files older than 1 hour
+        _remove_stale_atomic_files(path.parent)
+
+        return True
+
+    except asyncio.TimeoutError:
+        logger.warning(f"Atomic write timed out after {timeout}s", path=str(path))
+        return False
+    except Exception as e:
+        logger.warning(f"Atomic write failed: {e}", path=str(path))
+        return False
+    finally:
+        # Always clean up temp file if it exists
+        if temp_file_path and isinstance(temp_file_path, Path) and temp_file_path.exists():
+            try:
+                temp_file_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+
+def _remove_stale_atomic_files(dir_: Path, pattern: str = ".atomic_*") -> None:
+    """
+    Remove stale atomic temporary files older than 1 hour.
+
+    Args:
+        dir_: Directory to clean
+        pattern: Glob pattern for atomic temp files
+    """
+    try:
+        current_time = time.time()
+        for temp_file in dir_.glob(pattern):
+            try:
+                # Check if file is older than 1 hour
+                if temp_file.is_file():
+                    file_age = current_time - temp_file.stat().st_mtime
+                    if file_age > 3600:  # 1 hour
+                        temp_file.unlink()
+                        logger.debug(f"Removed stale atomic file: {temp_file}")
+            except Exception:
+                pass
+    except Exception as e:
+        logger.debug(f"Error during stale file cleanup: {e}")
+
+
+def _cleanup_temp_files(directory: Path, target_name: str) -> None:
+    """Clean up any temporary files left over from failed atomic writes."""
+    try:
+        pattern = f".{target_name}.*tmp"
+        for temp_file in directory.glob(pattern):
+            try:
+                temp_file.unlink()
+                logger.debug(f"Cleaned up orphaned temp file: {temp_file}")
+            except OSError:
+                pass
+    except Exception as e:
+        logger.debug(f"Error during temp file cleanup: {e}")
 
 
 def atomic_write_json(target_path: Path, data: Dict[str, Any]) -> None:
@@ -100,6 +208,14 @@ def atomic_write_json(target_path: Path, data: Dict[str, Any]) -> None:
         else:
             logger.error("Unexpected error during atomic write", error=str(e))
             raise OSError(f"Unexpected error writing {target_path}: {e}") from e
+
+    finally:
+        # Final cleanup attempt for any remaining temp files
+        if temp_file_path and temp_file_path.exists():
+            try:
+                temp_file_path.unlink()
+            except OSError:
+                pass
 
 
 def atomic_write_text(target_path: Path, content: str, encoding: str = "utf-8") -> None:

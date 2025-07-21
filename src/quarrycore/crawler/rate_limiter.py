@@ -355,6 +355,4 @@ class DomainRateLimiter:
         self.default_rps = min(new_default_rps, 20.0)  # Cap at 20 RPS
         self.max_rps = min(new_max_rps, 50.0)  # Cap at 50 RPS
 
-        logger.info(
-            f"Adapted rate limiter to hardware: " f"default={self.default_rps:.2f} RPS, max={self.max_rps:.2f} RPS"
-        )
+        logger.info(f"Adapted rate limiter to hardware: default={self.default_rps:.2f} RPS, max={self.max_rps:.2f} RPS")

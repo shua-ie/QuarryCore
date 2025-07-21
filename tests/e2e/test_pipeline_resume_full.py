@@ -306,7 +306,9 @@ async def test_ac04_duplicate_dead_letter_guard(temp_dir):
 
         # Add same URL but different stage - should be separate entry
         await dlq.add_failed_document(
-            url="https://example.com/test", failure_stage="extract", error_info=error_info1  # Different stage
+            url="https://example.com/test",
+            failure_stage="extract",
+            error_info=error_info1,  # Different stage
         )
 
         # Verify both entries exist
@@ -345,7 +347,7 @@ async def test_ac05_domain_failure_backpressure(mock_container):
     # Record failures below threshold
     for i in range(2):
         tracker.record_failure(domain)
-        assert not tracker.is_domain_backed_off(domain), f"Domain should not be backed off after {i+1} failures"
+        assert not tracker.is_domain_backed_off(domain), f"Domain should not be backed off after {i + 1} failures"
 
     # Record failure that exceeds threshold
     tracker.record_failure(domain)

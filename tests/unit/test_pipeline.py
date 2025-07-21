@@ -127,6 +127,19 @@ class MockContainer(DependencyContainer):
 
         return mock_http_client
 
+    async def get_extractor_manager(self):
+        """Return a mock ExtractorManager."""
+        mock_manager = AsyncMock()
+
+        # Mock extraction result with proper structure
+        mock_result = MagicMock()
+        mock_result.text = "Test content"
+        mock_result.title = "Test"
+        mock_result.score = 0.8
+
+        mock_manager.extract = AsyncMock(return_value=mock_result)
+        return mock_manager
+
 
 class MockAsyncContextManager:
     """Simple async context manager for testing."""
@@ -529,9 +542,15 @@ class TestPipelineProcessing:
 
             result = await pipeline._process_url("https://example.com", "worker-1")
 
-            assert result.status == ProcessingStatus.COMPLETED
-            assert result.stage_completed == PipelineStage.STORAGE
-            assert result.document_id == "test-doc-id"
+            # Result should be a ProcessedDoc dict
+            assert result is not None
+            assert isinstance(result, dict)
+            assert result["url"] == "https://example.com"
+            assert "extractor" in result
+            assert "quality" in result
+            assert "content" in result
+            assert "metadata" in result
+            assert result["metadata"]["document_id"] == "test-doc-id"
 
     @pytest.mark.asyncio
     async def test_process_url_quality_rejection(self):
@@ -544,6 +563,11 @@ class TestPipelineProcessing:
         quality_mock.assess_quality = AsyncMock()
         quality_mock.assess_quality.return_value = MagicMock(overall_score=0.3)  # Below threshold
         container.get_quality = AsyncMock(return_value=quality_mock)
+
+        # Mock ExtractorManager to return None (rejected)
+        mock_manager = AsyncMock()
+        mock_manager.extract = AsyncMock(return_value=None)
+        container.get_extractor_manager = AsyncMock(return_value=mock_manager)
 
         # Mock HTTP response
         mock_response = MagicMock()
@@ -560,8 +584,13 @@ class TestPipelineProcessing:
 
             result = await pipeline._process_url("https://example.com", "worker-1")
 
-            assert result.status == ProcessingStatus.SKIPPED
-            assert result.rejection_reason == "low_quality"
+            # Result should be dict with rejected metadata for rejected content
+            assert result is not None
+            assert isinstance(result, dict)
+            assert result["metadata"]["rejected"] is True
+            assert result["metadata"]["reason"] == "low_quality_or_extraction_failed"
+            assert result["quality"] == 0.0
+            assert result["extractor"] is None
 
     @pytest.mark.asyncio
     async def test_process_url_circuit_breaker_open(self):
@@ -576,9 +605,8 @@ class TestPipelineProcessing:
 
         result = await pipeline._process_url("https://example.com", "worker-1")
 
-        assert result.status == ProcessingStatus.FAILED
-        assert result.error_info is not None
-        assert "Circuit breaker open" in result.error_info.error_message
+        # Result should be None for failed processing
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_process_url_with_dead_letter_failure(self):
@@ -603,7 +631,7 @@ class TestPipelineProcessing:
 
         result = await pipeline._process_url("https://example.com", "worker-1")
 
-        assert result.status == ProcessingStatus.FAILED
+        assert result is None
         # Should log DLQ failure
         pipeline.logger.error.assert_called()
 
@@ -683,14 +711,13 @@ class TestPipelineCheckpointSave:
                 error_count_by_stage={},
             )
 
-            # Mock the atomic_write_json function to raise PermissionError
-            with patch("quarrycore.pipeline.atomic_write_json", side_effect=PermissionError("Permission denied")):
+            # Mock the atomic_json_dump function to return False (indicating failure)
+            with patch("quarrycore.utils.atomic.atomic_json_dump", return_value=False):
                 # Should handle error gracefully and log it
                 await pipeline._save_checkpoint()
 
                 # Verify error was logged
-                pipeline.logger.error.assert_called()
-        pipeline.logger.error.assert_called_once()
+                pipeline.logger.error.assert_called_once_with("Failed to save checkpoint: write timeout or error")
 
 
 class TestPipelineLoadCheckpoint:
@@ -877,7 +904,7 @@ class TestPipelineIntegrationPaths:
             result = await pipeline._process_url("https://example.com/test", "worker-1")
 
             # Should handle circuit breaker being open
-            assert result.status == ProcessingStatus.FAILED
+            assert result is None
 
     @pytest.mark.asyncio
     async def test_pipeline_stage_timing_and_stats(self):
@@ -910,6 +937,11 @@ class TestPipelineIntegrationPaths:
         container = MockContainer()
         pipeline = Pipeline(container)
 
+        # Mock ExtractorManager to return None (rejected due to low quality)
+        mock_manager = AsyncMock()
+        mock_manager.extract = AsyncMock(return_value=None)
+        container.get_extractor_manager = AsyncMock(return_value=mock_manager)
+
         # Mock HTTP response
         with patch("httpx.AsyncClient") as mock_client:
             mock_response = AsyncMock()
@@ -919,27 +951,14 @@ class TestPipelineIntegrationPaths:
             mock_response.headers = {"content-type": "text/html"}
             mock_client.return_value.__aenter__.return_value.get.return_value = mock_response
 
-            # Mock BeautifulSoup
-            with patch("bs4.BeautifulSoup") as mock_soup:
-                mock_soup_instance = MagicMock()
-                mock_soup_instance.get_text.return_value = "Low quality"
-                mock_soup_instance.title.string = "Low"
-                mock_soup.return_value = mock_soup_instance
+            # Process URL
+            result = await pipeline._process_url("https://example.com/low-quality", "worker-1")
 
-                # Mock quality assessment to fail (low score) - need to override the container method
-                async def get_quality_low_score():
-                    mock_quality = AsyncMock()
-                    mock_quality.assess_quality = AsyncMock(return_value=MagicMock(overall_score=0.2))
-                    return mock_quality
-
-                container.get_quality = get_quality_low_score
-
-                # Process URL
-                result = await pipeline._process_url("https://example.com/low-quality", "worker-1")
-
-                # Should be skipped due to low quality
-                assert result.status == ProcessingStatus.SKIPPED
-                assert result.rejection_reason == "low_quality"
+            # Should return dict with rejected metadata
+            assert result is not None
+            assert isinstance(result, dict)
+            assert result.get("metadata", {}).get("rejected") is True
+            assert result.get("metadata", {}).get("reason") == "low_quality_or_extraction_failed"
 
     @pytest.mark.asyncio
     async def test_pipeline_deduplication_path(self):
@@ -979,17 +998,18 @@ class TestPipelineIntegrationPaths:
                     with patch.object(pipeline, "_process_url", wraps=original_process_url):
                         # Override just the dedup result part
                         result = await original_process_url(*args, **kwargs)
-                        if hasattr(result, "status"):
-                            # Force duplicate result for testing
-                            result.status = ProcessingStatus.SKIPPED
-                            result.rejection_reason = "duplicate_content"
+                        if isinstance(result, dict):
+                            # Mark as rejected for duplicate
+                            result["metadata"]["rejected"] = True
+                            result["metadata"]["reason"] = "duplicate_content"
                         return result
 
                 # Test deduplication detection
                 result = await pipeline._process_url("https://example.com/duplicate", "worker-1")
 
-                # Should have attempted processing (won't necessarily be duplicate without full mock setup)
-                assert result.status in [ProcessingStatus.COMPLETED, ProcessingStatus.FAILED, ProcessingStatus.SKIPPED]
+                # Should have attempted processing
+                assert result is not None
+                assert isinstance(result, dict)
 
     @pytest.mark.asyncio
     async def test_pipeline_http_error_handling(self):
@@ -1004,9 +1024,7 @@ class TestPipelineIntegrationPaths:
         result = await pipeline._process_url("https://example.com/fail", "worker-1")
 
         # Should handle HTTP errors gracefully
-        assert result.status == ProcessingStatus.FAILED
-        assert result.error_info is not None
-        assert "Network error" in result.error_info.error_message
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_pipeline_content_extraction_error(self):
@@ -1029,7 +1047,8 @@ class TestPipelineIntegrationPaths:
                 result = await pipeline._process_url("https://example.com/parse-fail", "worker-1")
 
                 # Should handle parsing errors
-                assert result.status == ProcessingStatus.FAILED
+                assert result is not None
+                assert isinstance(result, dict)
 
     @pytest.mark.asyncio
     async def test_pipeline_storage_error_handling(self):
@@ -1067,7 +1086,7 @@ class TestPipelineIntegrationPaths:
             result = await pipeline._process_url("https://example.com/storage-fail", "worker-1")
 
             # Should handle storage errors
-            assert result.status == ProcessingStatus.FAILED
+            assert result is None
 
 
 class TestPipelineSignalHandling:
@@ -1192,7 +1211,8 @@ class TestPipelineSignalHandling:
 
         result = await pipeline._process_url("https://example.com", "worker-1")
 
-        assert result.status == ProcessingStatus.FAILED
+        # When circuit breaker fails during error handling, result is None
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_process_url_extraction_stage_errors(self):
@@ -1244,7 +1264,8 @@ class TestPipelineSignalHandling:
                 with patch("urllib.parse.urlparse", side_effect=Exception("Parse error")):
                     result = await pipeline._process_url("https://example.com", "worker-1")
 
-                    assert result.status == ProcessingStatus.FAILED
+                    # When metadata extraction fails, result is None
+                    assert result is None
 
     @pytest.mark.asyncio
     async def test_process_url_hashlib_import_error(self):
@@ -1264,7 +1285,8 @@ class TestPipelineSignalHandling:
             with patch.dict("sys.modules", {"hashlib": None}):
                 result = await pipeline._process_url("https://example.com", "worker-1")
 
-                assert result.status == ProcessingStatus.FAILED
+                # When hashlib import fails, result is None
+                assert result is None
 
     @pytest.mark.asyncio
     async def test_worker_exception_during_url_removal(self):
@@ -1298,12 +1320,13 @@ class TestPipelineSignalHandling:
             call_count += 1
             if call_count == 1:
                 raise Exception("Process error")
-            return ProcessingResult(
-                document_id=uuid4(),
-                status=ProcessingStatus.COMPLETED,
-                stage_completed=PipelineStage.STORAGE,
-                quality_score=0.8,
-            )
+            return {
+                "url": args[0],
+                "extractor": "test_extractor",
+                "quality": 0.8,
+                "content": "Test content",
+                "metadata": {"document_id": str(uuid4()), "domain": "example.org", "title": "Test", "word_count": 2},
+            }
 
         pipeline._process_url = mock_process
 
@@ -1476,11 +1499,7 @@ class TestPipelineAdditionalCoverage:
         # Mock process_url to simulate slow processing
         async def slow_process(*args, **kwargs):
             await asyncio.sleep(0.1)
-            return ProcessingResult(
-                document_id=None,
-                status=ProcessingStatus.FAILED,
-                stage_completed=PipelineStage.CRAWL,
-            )
+            return None  # Return None to simulate failed processing
 
         pipeline._process_url = slow_process
 
@@ -1505,8 +1524,8 @@ class TestPipelineAdditionalCoverage:
 
         result = await pipeline._process_url("https://example.com", "worker-1")
 
-        assert result.status == ProcessingStatus.FAILED
-        assert result.error_info is not None
+        # When httpx import error occurs, result is None
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_process_url_with_beautifulsoup_error(self):
@@ -1534,7 +1553,8 @@ class TestPipelineAdditionalCoverage:
                 result = await pipeline._process_url("https://example.com/bs-error", "worker-1")
 
                 # Should handle missing title gracefully
-                assert result.status in [ProcessingStatus.COMPLETED, ProcessingStatus.FAILED, ProcessingStatus.SKIPPED]
+                assert result is not None
+                assert isinstance(result, dict)
 
     @pytest.mark.asyncio
     async def test_load_checkpoint_with_invalid_json(self):

@@ -21,6 +21,12 @@ from .confidence_scorer import ConfidenceScorer
 from .content_processors import CodeProcessor, ImageProcessor, LinkProcessor, TableProcessor, TextProcessor
 from .domain_extractors import EcommerceExtractor, LegalExtractor, MedicalExtractor, TechnicalExtractor
 from .language_detector import LanguageDetector
+from .manager import ExtractorManager
+from .models import ExtractResult
+from .protocols import Extractor
+from .readability_extractor import ReadabilityExtractor
+from .soup_extractor import SoupFallbackExtractor
+from .trafilatura_extractor import TrafilaturaExtractor
 
 __all__ = [
     "CascadeExtractor",
@@ -35,4 +41,10 @@ __all__ = [
     "TechnicalExtractor",
     "LanguageDetector",
     "ConfidenceScorer",
+    "ExtractResult",
+    "Extractor",
+    "TrafilaturaExtractor",
+    "ReadabilityExtractor",
+    "SoupFallbackExtractor",
+    "ExtractorManager",
 ]

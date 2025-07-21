@@ -2,6 +2,7 @@
 """
 Simple test runner to show pytest progress in real-time
 """
+
 import subprocess
 import sys
 from pathlib import Path

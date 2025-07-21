@@ -297,7 +297,7 @@ async def test_pipeline_checkpoint_resume_e2e(temp_checkpoint_dir, temp_dead_let
 
             logger.info(f"Dead letter queue has {failed_count_dlq} failed documents")
             for i, (url, error_type, error_msg) in enumerate(sample_failures):
-                logger.info(f"Sample failure {i+1}: {url} - {error_type}: {error_msg}")
+                logger.info(f"Sample failure {i + 1}: {url} - {error_type}: {error_msg}")
 
         conn.close()
 

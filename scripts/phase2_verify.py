@@ -290,7 +290,7 @@ def check_test_shortcuts() -> bool:
 
     for i, test_file in enumerate(test_files):
         if i % 10 == 0:
-            print_with_timestamp(f"    📄 Processing file {i+1}/{len(test_files)}: {test_file.name}")
+            print_with_timestamp(f"    📄 Processing file {i + 1}/{len(test_files)}: {test_file.name}")
 
         try:
             content = test_file.read_text()
