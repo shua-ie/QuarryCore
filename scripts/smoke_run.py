@@ -58,7 +58,7 @@ async def run_smoke_test(count: int = 20) -> dict:
         print(f"  Total URLs: {total}")
         print(f"  Processed: {processed}")
         print(f"  Failed: {failed}")
-        print(f"  Success rate: {processed/total*100:.1f}%")
+        print(f"  Success rate: {processed / total * 100:.1f}%")
 
         # Check if we have non-None content for at least 90% of URLs (18/20)
         success_threshold = int(count * 0.9)

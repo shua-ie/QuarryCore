@@ -251,7 +251,9 @@ class TransformerCoherenceScorer:
                 text_embedding = await loop.run_in_executor(
                     None,
                     lambda: self._model.encode(
-                        text[:1024], convert_to_numpy=True, device=self._device  # Limit text length for performance
+                        text[:1024],
+                        convert_to_numpy=True,
+                        device=self._device,  # Limit text length for performance
                     ),
                 )
 

@@ -20,6 +20,7 @@ from quarrycore.config import Config
 if TYPE_CHECKING:
     from quarrycore.crawler.http_client import HttpClient
     from quarrycore.dataset import DatasetConstructor
+    from quarrycore.dedup.hybrid_dedup import HybridDeduplicator
     from quarrycore.extractor import ExtractorManager
     from quarrycore.observability import ObservabilityManager
     from quarrycore.quality import QualityAssessor
@@ -139,11 +140,22 @@ class DependencyContainer:
         # Import modules only when needed to avoid circular imports
         from quarrycore.crawler.http_client import HttpClient
         from quarrycore.dataset import DatasetConstructor
+        from quarrycore.dedup.hybrid_dedup import DedupConfig, HybridDeduplicator
         from quarrycore.extractor import ExtractorManager
         from quarrycore.observability import ObservabilityManager
         from quarrycore.quality import QualityAssessor
         from quarrycore.recovery.dead_letter_service import SQLiteDeadLetterService
         from quarrycore.storage import StorageManager
+
+        # Create deduplication config from main config
+        dedup_config = DedupConfig(
+            sqlite_path=self.config.deduplication.hybrid.sqlite_path,
+            redis_url=self.config.deduplication.hybrid.redis_url,
+            minhash_shingle_size=self.config.deduplication.hybrid.minhash_shingle_size,
+            minhash_num_perm=self.config.deduplication.hybrid.minhash_num_perm,
+            minhash_threshold=self.config.deduplication.hybrid.minhash_threshold,
+            minhash_enabled=self.config.deduplication.hybrid.minhash_enabled,
+        )
 
         # Create lazy instances with new configuration
         self._instances = {
@@ -152,6 +164,7 @@ class DependencyContainer:
             "quality": LazyInstance(QualityAssessor, self.config.quality),
             "dataset": LazyInstance(DatasetConstructor, self.config.dataset),
             "http_client": LazyInstance(HttpClient, self.config),
+            "deduplicator": LazyInstance(HybridDeduplicator, dedup_config),
             "dead_letter": LazyInstance(
                 SQLiteDeadLetterService, self.config.storage.hot.db_path.parent / "dead_letter.db"
             ),
@@ -207,6 +220,11 @@ class DependencyContainer:
         """Get the extractor manager instance."""
         async with self._instances_lock:
             return await self._instances["extractor_manager"].get()  # type: ignore
+
+    async def get_deduplicator(self) -> HybridDeduplicator:
+        """Get the hybrid deduplicator instance."""
+        async with self._instances_lock:
+            return await self._instances["deduplicator"].get()  # type: ignore
 
     @asynccontextmanager
     async def lifecycle(self) -> AsyncIterator[DependencyContainer]:
