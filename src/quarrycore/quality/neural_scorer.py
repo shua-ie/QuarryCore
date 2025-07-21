@@ -4,6 +4,8 @@ import asyncio
 import os
 from typing import TYPE_CHECKING, Any, Dict, List
 
+import structlog
+
 if TYPE_CHECKING:
     import numpy as np  # type: ignore[import-not-found]
     import torch  # type: ignore[import-not-found]
@@ -14,6 +16,9 @@ if TYPE_CHECKING:
     from sentence_transformers.util import cos_sim  # type: ignore[import-not-found]
 
 from quarrycore.protocols import ContentMetadata, ExtractedContent, QualityScore
+
+# Setup logger
+logger = structlog.get_logger(__name__)
 
 # Check if we're in test mode
 _TEST_MODE = os.environ.get("QUARRY_TEST_MODE", "0") == "1"
@@ -108,11 +113,11 @@ class NeuralScorer:
         else:
             self.device = device
 
-        print(f"NeuralScorer is using device: {self.device}")
+        logger.info(f"NeuralScorer is using device: {self.device}")
 
         # Use mock models in test mode to avoid network calls
         if _TEST_MODE:
-            print("NeuralScorer running in test mode - using mock models")
+            logger.info("NeuralScorer running in test mode - using mock models")
             self.coherence_model = MockSentenceTransformer(device=self.device)
             self.toxicity_model = MockToxicityModel(device=self.device)
             self._is_mock = True

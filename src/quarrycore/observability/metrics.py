@@ -141,6 +141,22 @@ def _create_metrics() -> Dict[str, Any]:
                 "quarrycore_crawler_domain_backoff_total",
                 "Total number of domains that entered backoff/cooldown",
             ),
+            # Quality assessment metrics
+            "quality_reject_total": Counter(
+                "quarrycore_quality_reject_total",
+                "Total number of documents rejected due to low quality",
+            ),
+            "quality_scorer_latency": Histogram(
+                "quarrycore_quality_scorer_latency_seconds",
+                "Time taken by individual quality scorers",
+                ["scorer"],
+                buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0],
+            ),
+            "quality_scorer_errors": Counter(
+                "quarrycore_quality_scorer_errors_total",
+                "Total number of errors in quality scorers",
+                ["scorer"],
+            ),
         }
 
     # Check if metrics are already registered
@@ -218,6 +234,22 @@ def _create_metrics() -> Dict[str, Any]:
             "crawler_domain_backoff_total": Counter(
                 "quarrycore_crawler_domain_backoff_total",
                 "Total number of domains that entered backoff/cooldown",
+            ),
+            # Quality assessment metrics
+            "quality_reject_total": Counter(
+                "quarrycore_quality_reject_total",
+                "Total number of documents rejected due to low quality",
+            ),
+            "quality_scorer_latency": Histogram(
+                "quarrycore_quality_scorer_latency_seconds",
+                "Time taken by individual quality scorers",
+                ["scorer"],
+                buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0],
+            ),
+            "quality_scorer_errors": Counter(
+                "quarrycore_quality_scorer_errors_total",
+                "Total number of errors in quality scorers",
+                ["scorer"],
             ),
         }
     except Exception as e:

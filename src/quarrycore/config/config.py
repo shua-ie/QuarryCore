@@ -231,6 +231,9 @@ class QualityConfig(BaseModel):
 
     min_content_length: int = Field(default=50, description="Minimum word count to perform quality assessment.")
     max_content_length: int = Field(default=50000, description="Maximum word count to perform quality assessment.")
+    device: Literal["auto", "cpu", "cuda"] = Field(
+        default="auto", description="Device to use for neural scoring (auto, cpu, or cuda)"
+    )
     default: DomainQualityConfig = Field(default_factory=DomainQualityConfig)
     domains: dict[DomainType, DomainQualityConfig] = Field(
         default_factory=dict, description="Domain-specific quality thresholds."

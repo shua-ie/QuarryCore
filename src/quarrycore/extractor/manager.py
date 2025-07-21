@@ -199,12 +199,18 @@ class ExtractorManager:
                     self._extraction_metrics[extractor_name]["successes"] += 1
                     return result
                 else:
-                    self.logger.debug(
-                        "Content below quality threshold",
-                        extractor=extractor_name,
+                    # Import metrics at the top of the method to avoid circular imports
+                    from quarrycore.observability.metrics import METRICS
+
+                    if "quality_reject_total" in METRICS:
+                        METRICS["quality_reject_total"].inc()
+
+                    self.logger.info(
+                        "Content rejected due to low quality",
                         url=url,
                         quality_score=quality_score,
                         threshold=self.settings.quality_threshold,
+                        extractor=extractor_name,
                     )
                     continue
 
