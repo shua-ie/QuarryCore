@@ -152,9 +152,10 @@ class MockLanguageModel:
         """Mock prediction - returns English for reasonable text."""
         if len(text) > 20 and text.count(" ") > 2:
             # Simple heuristic: check for Spanish words
-            spanish_words = {"es", "en", "con", "español", "texto", "gramática"}
+            spanish_words = {"es", "en", "con", "español", "texto", "gramática", "este"}
             text_lower = text.lower()
-            if any(word in text_lower for word in spanish_words):
+            words = set(text_lower.split())
+            if any(word in words for word in spanish_words):
                 return (["__label__es"], [0.99])
             return (["__label__en"], [0.99])
         return (["__label__unknown"], [0.5])
@@ -224,24 +225,17 @@ class TransformerCoherenceScorer:
         return Score(self.name, score_value)
 
     async def score(self, text: str) -> float:
-        """
-        Score the coherence of the given text.
+        """Score text coherence using transformer model."""
+        # Short texts aren't coherent enough
+        if len(text.split()) < 10:
+            return 0.0
 
-        Args:
-            text: The text to score
-
-        Returns:
-            Coherence score between 0 and 1
-        """
-        if not self._initialized:
-            await self._initialize()
-
+        # Test mode returns a fixed score
         if _TEST_MODE:
-            # Return a reasonable mock score
             return 0.75
 
-        if not text or len(text.split()) < 10:
-            return 0.0
+        if not self._initialized:
+            await self._initialize()
 
         try:
             # Measure encoding time

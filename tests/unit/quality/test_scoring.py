@@ -111,7 +111,9 @@ class TestTransformerCoherenceScorer:
         try:
             config = QualityConfig(device="cpu")
             scorer = TransformerCoherenceScorer(config)
-            score = await scorer.score("Any text in test mode")
+            score = await scorer.score(
+                "This is a test text with more than ten words to ensure test mode returns the mock score"
+            )
 
             assert score == 0.75  # Mock score in test mode
         finally:
@@ -185,14 +187,14 @@ class TestQualityAssessor:
 
             good_text = (
                 """
-            This is a well-written article about artificial intelligence and its impact
-            on modern society. The article discusses various applications of AI in healthcare,
-            education, and transportation. It provides clear examples and maintains a logical
-            flow throughout. The content is informative and engaging, suitable for a general
-            audience interested in technology trends. The writing style is professional yet
-            accessible, making complex concepts easy to understand. Overall, this represents
-            high-quality content that would be valuable for training language models.
-            """
+This is a well-written article about artificial intelligence and its impact
+on modern society. The article discusses various applications of AI in healthcare,
+education, and transportation. It provides clear examples and maintains a logical
+flow throughout. The content is informative and engaging, suitable for a general
+audience interested in technology trends. The writing style is professional yet
+accessible, making complex concepts easy to understand. Overall, this represents
+high-quality content that would be valuable for training language models.
+"""
                 * 2
             )  # Make it longer than 400 chars
 
