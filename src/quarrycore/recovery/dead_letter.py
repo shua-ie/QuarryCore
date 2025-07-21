@@ -15,8 +15,11 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
 import aiosqlite
+import structlog
 
 from quarrycore.protocols import ErrorInfo, ErrorSeverity
+
+logger = structlog.get_logger(__name__)
 
 
 @dataclass
@@ -351,7 +354,7 @@ class DeadLetterQueue:
                 break
             except Exception as e:
                 # Log error but continue
-                print(f"Error in retry loop: {e}")
+                logger.info(f"Error in retry loop: {e}")
                 await asyncio.sleep(60)
 
     async def _check_retry_queue(self) -> None:

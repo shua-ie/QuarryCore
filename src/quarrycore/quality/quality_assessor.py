@@ -10,6 +10,7 @@ from .grammar_scorer import GrammarScorer
 from .heuristic_scorer import HeuristicScorer
 from .lexical_scorer import LexicalScorer
 from .neural_scorer import NeuralScorer
+from .scorers import TransformerCoherenceScorer
 
 if TYPE_CHECKING:
     from .scorer import Scorer
@@ -37,6 +38,7 @@ class QualityAssessor(QualityProtocol):
         )
 
         self.neural_scorer = NeuralScorer()
+        self.transformer_coherence_scorer = TransformerCoherenceScorer(config)
 
         self.scorers: List[Scorer] = [
             self.lexical_scorer,
@@ -77,6 +79,11 @@ class QualityAssessor(QualityProtocol):
             # Handle neural scorer separately for batching efficiency
             neural_task = self.neural_scorer.score_batch([content for content, metadata in chunk])
 
+            # Run transformer coherence scoring
+            coherence_tasks = []
+            for content, _ in chunk:
+                coherence_tasks.append(self.transformer_coherence_scorer.score(content.text))
+
             # Run other scorers
             other_scorers_tasks = []
             for scorer in self.scorers:
@@ -85,13 +92,15 @@ class QualityAssessor(QualityProtocol):
                     other_scorers_tasks.append(task)
 
             # Gather all results
-            gathered_results = await asyncio.gather(neural_task, *other_scorers_tasks)
+            gathered_results = await asyncio.gather(neural_task, *coherence_tasks, *other_scorers_tasks)
 
             neural_results = gathered_results[0]
+            coherence_scores = gathered_results[1 : 1 + len(coherence_tasks)]
 
             # Apply neural scores
             for j, result in enumerate(neural_results):
-                scores[j].coherence_score = result.get("coherence_score", 0.0)
+                # Use our transformer coherence score instead of neural scorer's
+                scores[j].coherence_score = coherence_scores[j]
                 scores[j].toxicity_score = result.get("toxicity_score", 0.0)
                 scores[j].quality_factors.update(result.get("quality_factors", {}))
 

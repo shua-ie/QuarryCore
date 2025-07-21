@@ -10,11 +10,14 @@ import time
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import psutil
+import structlog
 from prometheus_client import REGISTRY as _PROM_REGISTRY
 from prometheus_client import Counter as _OrigCounter
 from prometheus_client import Gauge as _OrigGauge
 from prometheus_client import Histogram as _OrigHistogram
 from prometheus_client import start_http_server
+
+logger = structlog.get_logger(__name__)
 
 if TYPE_CHECKING:
     from quarrycore.config.config import MonitoringConfig
@@ -141,6 +144,22 @@ def _create_metrics() -> Dict[str, Any]:
                 "quarrycore_crawler_domain_backoff_total",
                 "Total number of domains that entered backoff/cooldown",
             ),
+            # Quality assessment metrics
+            "quality_reject_total": Counter(
+                "quarrycore_quality_reject_total",
+                "Total number of documents rejected due to low quality",
+            ),
+            "quality_scorer_latency": Histogram(
+                "quarrycore_quality_scorer_latency_seconds",
+                "Time taken by individual quality scorers",
+                ["scorer"],
+                buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0],
+            ),
+            "quality_scorer_errors": Counter(
+                "quarrycore_quality_scorer_errors_total",
+                "Total number of errors in quality scorers",
+                ["scorer"],
+            ),
         }
 
     # Check if metrics are already registered
@@ -219,9 +238,25 @@ def _create_metrics() -> Dict[str, Any]:
                 "quarrycore_crawler_domain_backoff_total",
                 "Total number of domains that entered backoff/cooldown",
             ),
+            # Quality assessment metrics
+            "quality_reject_total": Counter(
+                "quarrycore_quality_reject_total",
+                "Total number of documents rejected due to low quality",
+            ),
+            "quality_scorer_latency": Histogram(
+                "quarrycore_quality_scorer_latency_seconds",
+                "Time taken by individual quality scorers",
+                ["scorer"],
+                buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0],
+            ),
+            "quality_scorer_errors": Counter(
+                "quarrycore_quality_scorer_errors_total",
+                "Total number of errors in quality scorers",
+                ["scorer"],
+            ),
         }
     except Exception as e:
-        print(f"Error creating metrics: {e}")
+        logger.info(f"Error creating metrics: {e}")
         return {}
 
 
@@ -244,15 +279,15 @@ class GpuMonitor(threading.Thread):
                 pynvml.nvmlInit()
                 self.pynvml = pynvml
                 self.handle_count = pynvml.nvmlDeviceGetCount()
-                print(f"GPU Monitor: Found {self.handle_count} GPUs.")
+                logger.info(f"GPU Monitor: Found {self.handle_count} GPUs.")
             except Exception as e:
                 self.pynvml = None
                 self.handle_count = 0
-                print(f"GPU Monitor: Failed to initialize pynvml: {e}")
+                logger.info(f"GPU Monitor: Failed to initialize pynvml: {e}")
         else:
             self.pynvml = None
             self.handle_count = 0
-            print("GPU Monitor: pynvml not available. No GPU metrics will be collected.")
+            logger.info("GPU Monitor: pynvml not available. No GPU metrics will be collected.")
 
     def run(self) -> None:
         """Periodically query and update GPU metrics."""
@@ -281,7 +316,7 @@ class GpuMonitor(threading.Thread):
                             self.pynvml.nvmlDeviceGetTemperature(handle, self.pynvml.NVML_TEMPERATURE_GPU)
                         )
             except Exception as e:
-                print(f"GPU Monitor: Error collecting metrics: {e}")
+                logger.info(f"GPU Monitor: Error collecting metrics: {e}")
 
             # Use event wait with timeout instead of blocking sleep for cooperative shutdown
             self._stop_event.wait(timeout=self.interval)
@@ -293,7 +328,7 @@ class GpuMonitor(threading.Thread):
             try:
                 self.pynvml.nvmlShutdown()
             except Exception as e:
-                print(f"GPU Monitor: Error during shutdown: {e}")
+                logger.info(f"GPU Monitor: Error during shutdown: {e}")
 
 
 class MetricsManager:
@@ -311,7 +346,7 @@ class MetricsManager:
     def start(self) -> None:
         """Starts the Prometheus server and GPU monitor thread."""
         if self.config.prometheus_port:
-            print(f"Starting Prometheus metrics server on port {self.config.prometheus_port}")
+            logger.info(f"Starting Prometheus metrics server on port {self.config.prometheus_port}")
             start_http_server(self.config.prometheus_port)
 
         self._gpu_monitor.start()
@@ -338,7 +373,7 @@ class MetricsManager:
             self._update_resource_efficiency(cpu_usage, memory_usage)
 
         except Exception as e:
-            print(f"Error updating system metrics: {e}")
+            logger.info(f"Error updating system metrics: {e}")
 
     def _calculate_efficiency(self, current_cpu: float, current_memory: float) -> float:
         """Calculate resource efficiency score based on CPU and memory usage."""
@@ -378,7 +413,7 @@ class MetricsManager:
             self.last_update_time = time.time()
 
         except Exception as e:
-            print(f"Error updating resource efficiency: {e}")
+            logger.info(f"Error updating resource efficiency: {e}")
 
     def get_current_metrics(self) -> Dict[str, Any]:
         """Get current metric values as a dictionary."""
@@ -417,12 +452,12 @@ class MetricsManager:
                             }
                         )
                     except Exception as e:
-                        print(f"Error getting GPU {i} metrics: {e}")
+                        logger.info(f"Error getting GPU {i} metrics: {e}")
 
                 metrics_data["gpu_metrics"] = gpu_metrics
 
         except Exception as e:
-            print(f"Error collecting current metrics: {e}")
+            logger.info(f"Error collecting current metrics: {e}")
 
         return metrics_data
 

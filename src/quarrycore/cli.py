@@ -184,7 +184,7 @@ def run(
                         )
                     )
                 else:
-                    print(json.dumps(health, indent=2))
+                    logger.info("Health check", health=health)
             return
 
         if console and Panel:
@@ -216,14 +216,16 @@ async def run_standard_pipeline(
     """Run pipeline with progress bars."""
     if not Progress or not console:
         # Fallback to simple text output
-        print(f"Processing {len(url_list)} URLs...")
+        logger.info("Processing URLs", count=len(url_list))
         result = await pipeline.run(
             urls=url_list,
             batch_size=batch_size,
             checkpoint_interval=checkpoint_interval,
             resume_from=resume_from,
         )
-        print(f"Completed: {result.get('processed_count', 0)} processed, {result.get('failed_count', 0)} failed")
+        logger.info(
+            "Pipeline completed", processed=result.get("processed_count", 0), failed=result.get("failed_count", 0)
+        )
         return
 
     progress = Progress(
@@ -311,11 +313,13 @@ async def run_interactive_pipeline(
 
         while not pipeline_task.done():
             if pipeline.state:
-                print(f"Status: {pipeline.state.stage.value}, Processed: {pipeline.state.processed_count}")
+                logger.info(
+                    "Pipeline status", stage=pipeline.state.stage.value, processed=pipeline.state.processed_count
+                )
             await asyncio.sleep(1)
 
         await pipeline_task
-        print("Pipeline completed successfully!")
+        logger.info("Pipeline completed successfully")
         return
 
     with Live(create_status_table(), refresh_per_second=2, console=console) as live:
@@ -404,9 +408,9 @@ def analyze(ctx: click.Context, dataset_path: str, output: Optional[str], output
             else:
                 formatted_result = json.dumps(analysis_result, indent=2)
                 if console:
-                    console.print(formatted_result)
+                    console.logger.info("Analysis result", result=formatted_result)
                 else:
-                    print(formatted_result)
+                    logger.info("Analysis result", result=formatted_result)
 
                 if output:
                     Path(output).write_text(formatted_result)
@@ -462,28 +466,28 @@ def validate_config(ctx: click.Context) -> None:
 
                 console.print(table)
             else:
-                print("Configuration Status:")
+                logger.info("Configuration Status")
                 for key, value in health.items():
                     status = "✅ OK" if value else "❌ Error"
-                    print(f"{key}: {status}")
+                    logger.info("Config item", key=key, status=status)
 
             if all(health.values()):
                 if console:
                     console.print("[green]✅ Configuration is valid![/green]")
                 else:
-                    print("✅ Configuration is valid!")
+                    logger.info("Configuration is valid")
             else:
                 if console:
                     console.print("[red]❌ Configuration has issues![/red]")
                 else:
-                    print("❌ Configuration has issues!")
+                    logger.error("Configuration has issues")
                 sys.exit(1)
 
         except Exception as e:
             if console:
                 console.print(f"[red]❌ Configuration validation failed: {e}[/red]")
             else:
-                print(f"❌ Configuration validation failed: {e}")
+                logger.error("Configuration validation failed", error=str(e))
             sys.exit(1)
 
     asyncio.run(validate())
@@ -510,15 +514,15 @@ def health(output_format: str) -> None:
                 for key, value in health_status.items():
                     metric_value = 1 if value else 0
                     if console:
-                        console.print(f"quarrycore_health_{key} {metric_value}")
+                        console.logger.info("Health metric", metric=f"quarrycore_health_{key}", value=metric_value)
                     else:
-                        print(f"quarrycore_health_{key} {metric_value}")
+                        logger.info("Health metric", metric=f"quarrycore_health_{key}", value=metric_value)
             else:
                 output = json.dumps(health_status, indent=2)
                 if console:
-                    console.print(output)
+                    console.logger.info("Health output", output=output)
                 else:
-                    print(output)
+                    logger.info("Health output", output=output)
 
             # Exit with non-zero if unhealthy
             if not all(health_status.values()):
@@ -527,9 +531,9 @@ def health(output_format: str) -> None:
         except Exception as e:
             error_output = json.dumps({"error": str(e)})
             if console:
-                console.print(error_output)
+                console.logger.error("Health check error", output=error_output)
             else:
-                print(error_output)
+                logger.error("Health check error", output=error_output)
             sys.exit(1)
 
     asyncio.run(check_health())

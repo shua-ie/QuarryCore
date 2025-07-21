@@ -8,10 +8,13 @@ from collections import Counter
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
+import structlog
 from transformers import AutoTokenizer
 
 from quarrycore.config.config import DatasetConfig
 from quarrycore.protocols import ContentMetadata, QualityScore
+
+logger = structlog.get_logger(__name__)
 
 
 class Analytics:
@@ -101,6 +104,6 @@ class Analytics:
         """Prints the analytics report in a readable format."""
         import json
 
-        print("\n--- Dataset Analytics Report ---")
-        print(json.dumps(report, indent=2))
-        print("------------------------------\n")
+        logger.info("\n--- Dataset Analytics Report ---")
+        logger.info(json.dumps(report, indent=2))
+        logger.info("------------------------------\n")

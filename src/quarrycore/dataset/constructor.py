@@ -7,6 +7,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import structlog
+
 from quarrycore.config.config import DatasetConfig
 from quarrycore.protocols import (
     ContentMetadata,
@@ -22,6 +24,8 @@ from .chunker import Chunker
 from .exporter import get_exporter
 from .formatter import Formatter
 from .sampler import Sampler
+
+logger = structlog.get_logger(__name__)
 
 
 class DatasetConstructor(DatasetProtocol):
@@ -76,7 +80,7 @@ class DatasetConstructor(DatasetProtocol):
         Returns:
             A dictionary containing the analytics report of the created dataset.
         """
-        print("Starting dataset construction...")
+        logger.info("Starting dataset construction...")
 
         # Query storage for available content (simplified implementation)
         available_content: List[ProcessingResult] = await self._query_available_content()
@@ -95,30 +99,30 @@ class DatasetConstructor(DatasetProtocol):
             content_by_url[meta.url] for meta, score in sampled_docs if meta.url in content_by_url
         ]
 
-        print(f"Sampled {len(sampled_docs)} documents for the dataset.")
+        logger.info(f"Sampled {len(sampled_docs)} documents for the dataset.")
 
         # 2. Chunk the text of the sampled documents
         texts_to_chunk = [content.text for content in final_content_for_chunking]
         all_chunks = await self.chunker.chunk_batch(texts_to_chunk)
         flat_chunks = [chunk for doc_chunks in all_chunks for chunk in doc_chunks]
-        print(f"Created {len(flat_chunks)} chunks from sampled documents.")
+        logger.info(f"Created {len(flat_chunks)} chunks from sampled documents.")
 
         # 3. Format the chunks for training
         formatted_data = self.formatter.format_batch(flat_chunks)
-        print(f"Formatted {len(formatted_data)} records for training.")
+        logger.info(f"Formatted {len(formatted_data)} records for training.")
 
         # 4. Export the dataset to all configured formats
         for exporter in self.exporters:
             # Re-enable this when content query is ready
             # output_path = self.config.export.output_path / self.config.name
             # exporter.export(formatted_data, output_path)
-            print(f"Simulating export with {exporter.__class__.__name__}")
+            logger.info(f"Simulating export with {exporter.__class__.__name__}")
 
         # 5. Analyze and report on the final dataset
         report = self.analytics.analyze(formatted_data, sampled_docs)
         self.analytics.pretty_print_report(report)
 
-        print("Dataset construction complete.")
+        logger.info("Dataset construction complete.")
         return report
 
     async def _query_available_content(self) -> List[ProcessingResult]:
@@ -335,6 +339,6 @@ class DatasetConstructor(DatasetProtocol):
         else:
             raise ValueError(f"Unsupported export format: {format_type}")
 
-        print(f"Dataset exported to {output_path} in {format_type} format")
+        logger.info(f"Dataset exported to {output_path} in {format_type} format")
 
     # Other protocol methods would be implemented here
