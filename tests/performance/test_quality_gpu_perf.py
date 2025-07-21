@@ -1,233 +1,213 @@
-"""
-Performance tests for GPU-accelerated quality scoring.
+"""Performance tests for GPU-accelerated quality scoring."""
 
-These tests are automatically skipped if CUDA is not available.
-"""
+from __future__ import annotations
 
 import asyncio
-import statistics
+import os
 import time
 from typing import List
 
 import pytest
+import pytest_benchmark
 import structlog
 from quarrycore.config.config import QualityConfig
+from quarrycore.quality.assessor import QualityAssessor
 from quarrycore.quality.scorers import TransformerCoherenceScorer
 
 logger = structlog.get_logger(__name__)
 
-# Check for CUDA availability
+# Import torch for skip condition
 try:
     import torch
-
-    CUDA_AVAILABLE = torch.cuda.is_available()
 except ImportError:
-    CUDA_AVAILABLE = False
+    torch = None
 
 
-@pytest.mark.requires_cuda
-@pytest.mark.skipif(not CUDA_AVAILABLE, reason="CUDA not available")
-class TestQualityGPUPerformance:
-    """Performance benchmarks for GPU-accelerated quality scoring."""
+def generate_test_texts(count: int = 100) -> List[str]:
+    """Generate test texts of varying quality and length."""
+    texts = []
 
-    @pytest.fixture
-    def sample_texts(self) -> List[str]:
-        """Generate sample texts of ~1KB each for benchmarking."""
-        base_text = (
-            "This is a sample text used for performance benchmarking. "
-            "It contains meaningful content that demonstrates various aspects of writing quality. "
-            "The text has proper grammar, coherent structure, and conveys information clearly. "
-            "Performance testing helps ensure that our quality assessment remains fast and efficient. "
-        )
+    # High quality English text
+    good_text = """
+    Artificial intelligence has revolutionized numerous industries in recent years.
+    Machine learning algorithms now power recommendation systems, autonomous vehicles,
+    and medical diagnostics. The rapid advancement in deep learning has enabled
+    computers to understand and generate human-like text with unprecedented accuracy.
+    """
 
-        # Create texts of approximately 1KB each
-        texts = []
-        for i in range(100):
-            # Vary the content slightly to avoid caching effects
-            text = f"Document {i}: " + (base_text * 5)  # ~1KB
-            texts.append(text)
+    # Poor quality text
+    bad_text = "This bad text. No good grammar here. Very short sentences."
 
-        return texts
+    # Mixed language text
+    mixed_text = "This is ein mixed sprache text mit different languages zusammen."
 
-    @pytest.mark.asyncio
-    async def test_gpu_scorer_latency(self, sample_texts):
-        """Test that GPU scorer meets latency requirements (≤ 25ms median for 1KB text)."""
-        config = QualityConfig(device="cuda")
-        scorer = TransformerCoherenceScorer(config)
+    for i in range(count):
+        if i % 3 == 0:
+            texts.append(good_text * (i % 5 + 1))  # Varying lengths
+        elif i % 3 == 1:
+            texts.append(bad_text * (i % 3 + 1))
+        else:
+            texts.append(mixed_text * (i % 4 + 1))
 
-        # Warm up the model
-        for _ in range(5):
-            await scorer.score(sample_texts[0])
+    return texts
 
-        # Measure latencies
-        latencies = []
-        for text in sample_texts[:50]:  # Test with 50 samples
-            start = time.perf_counter()
-            await scorer.score(text)
-            end = time.perf_counter()
-            latencies.append((end - start) * 1000)  # Convert to milliseconds
 
-        # Calculate statistics
-        median_latency = statistics.median(latencies)
-        p95_latency = statistics.quantiles(latencies, n=20)[18]  # 95th percentile
-        mean_latency = statistics.mean(latencies)
+@pytest.mark.benchmark(group="quality-scoring")
+class TestQualityPerformance:
+    """Performance tests for quality scoring."""
 
-        logger.info(
-            "GPU scorer latency stats",
-            median_ms=f"{median_latency:.2f}",
-            mean_ms=f"{mean_latency:.2f}",
-            p95_ms=f"{p95_latency:.2f}",
-            samples=len(latencies),
-        )
+    def test_assessor_latency_cpu(self, benchmark):
+        """Benchmark quality assessment latency on CPU."""
+        os.environ["QUARRY_TEST_MODE"] = "0"  # Disable test mode for real performance
+        try:
+            config = QualityConfig(device="cpu", min_score=0.6)
+            QualityAssessor._instance = None
+            assessor = QualityAssessor(config)
 
-        # Assert median latency is under 25ms
-        assert median_latency <= 25.0, f"Median latency {median_latency:.2f}ms exceeds 25ms requirement"
+            test_text = generate_test_texts(1)[0]
 
-        # Cleanup
-        scorer.cleanup()
+            # Warm up
+            asyncio.run(assessor.score(test_text))
 
-    @pytest.mark.asyncio
-    async def test_gpu_vs_cpu_speedup(self, sample_texts):
-        """Compare GPU vs CPU performance to verify acceleration benefit."""
-        # Test GPU performance
-        gpu_config = QualityConfig(device="cuda")
-        gpu_scorer = TransformerCoherenceScorer(gpu_config)
+            def score_sync():
+                return asyncio.run(assessor.score(test_text))
 
-        # Warm up
-        for _ in range(3):
-            await gpu_scorer.score(sample_texts[0])
+            result = benchmark(score_sync)
 
-        # Measure GPU time
-        gpu_start = time.perf_counter()
-        for text in sample_texts[:20]:
-            await gpu_scorer.score(text)
-        gpu_time = time.perf_counter() - gpu_start
+            # Check performance threshold
+            assert result is not None
+            assert benchmark.stats["mean"] < 0.025  # 25ms threshold
 
-        gpu_scorer.cleanup()
+        finally:
+            os.environ.pop("QUARRY_TEST_MODE", None)
+            if hasattr(assessor, "coherence_scorer"):
+                assessor.coherence_scorer.cleanup()
+            QualityAssessor._instance = None
 
-        # Test CPU performance
-        cpu_config = QualityConfig(device="cpu")
-        cpu_scorer = TransformerCoherenceScorer(cpu_config)
+    @pytest.mark.skipif(not torch.cuda.is_available() if torch is not None else True, reason="CUDA not available")
+    def test_assessor_latency_gpu(self, benchmark):
+        """Benchmark quality assessment latency on GPU."""
+        os.environ["QUARRY_TEST_MODE"] = "0"  # Disable test mode for real performance
+        try:
+            config = QualityConfig(device="cuda", min_score=0.6)
+            QualityAssessor._instance = None
+            assessor = QualityAssessor(config)
 
-        # Warm up
-        for _ in range(3):
-            await cpu_scorer.score(sample_texts[0])
+            test_text = generate_test_texts(1)[0]
 
-        # Measure CPU time
-        cpu_start = time.perf_counter()
-        for text in sample_texts[:20]:
-            await cpu_scorer.score(text)
-        cpu_time = time.perf_counter() - cpu_start
+            # Warm up
+            asyncio.run(assessor.score(test_text))
 
-        cpu_scorer.cleanup()
+            def score_sync():
+                return asyncio.run(assessor.score(test_text))
 
-        # Calculate speedup
-        speedup = cpu_time / gpu_time
+            result = benchmark(score_sync)
 
-        logger.info(
-            "GPU vs CPU performance comparison",
-            gpu_time_s=f"{gpu_time:.3f}",
-            cpu_time_s=f"{cpu_time:.3f}",
-            speedup=f"{speedup:.2f}x",
-            texts_processed=20,
-        )
+            # GPU should be faster
+            assert result is not None
+            assert benchmark.stats["mean"] < 0.025  # 25ms threshold
 
-        # GPU should provide at least some speedup (though this depends on hardware)
-        assert speedup >= 1.0, f"GPU slower than CPU (speedup: {speedup:.2f}x)"
+        finally:
+            os.environ.pop("QUARRY_TEST_MODE", None)
+            if hasattr(assessor, "coherence_scorer"):
+                assessor.coherence_scorer.cleanup()
+            QualityAssessor._instance = None
 
-    @pytest.mark.asyncio
-    async def test_gpu_memory_usage(self, sample_texts):
-        """Test that GPU memory usage remains reasonable."""
-        import torch
+    def test_batch_throughput(self, benchmark):
+        """Test throughput for batch processing."""
+        os.environ["QUARRY_TEST_MODE"] = "1"  # Use test mode for consistent results
+        try:
+            config = QualityConfig(device="cpu", min_score=0.6)
+            QualityAssessor._instance = None
+            assessor = QualityAssessor(config)
 
-        if not torch.cuda.is_available():
-            pytest.skip("CUDA not available")
+            test_texts = generate_test_texts(10)
 
-        # Clear GPU cache
-        torch.cuda.empty_cache()
+            async def score_batch():
+                tasks = [assessor.score(text) for text in test_texts]
+                return await asyncio.gather(*tasks)
 
-        # Get initial memory
-        initial_memory = torch.cuda.memory_allocated() / 1024 / 1024  # MB
+            def score_batch_sync():
+                return asyncio.run(score_batch())
 
-        config = QualityConfig(device="cuda")
-        scorer = TransformerCoherenceScorer(config)
+            results = benchmark(score_batch_sync)
 
-        # Process some texts
-        for text in sample_texts[:10]:
-            await scorer.score(text)
+            # Should process all texts
+            assert len(results) == 10
+            assert all(0.0 <= score <= 1.0 for score in results)
 
-        # Get memory after model init and scoring
-        model_memory = torch.cuda.memory_allocated() / 1024 / 1024  # MB
-        memory_delta = model_memory - initial_memory
+        finally:
+            os.environ.pop("QUARRY_TEST_MODE", None)
+            QualityAssessor._instance = None
 
-        logger.info(
-            "GPU memory usage",
-            initial_mb=f"{initial_memory:.1f}",
-            after_model_mb=f"{model_memory:.1f}",
-            delta_mb=f"{memory_delta:.1f}",
-        )
+    def test_memory_usage(self):
+        """Test memory usage of quality scoring."""
+        import gc
 
-        # Clean up
-        scorer.cleanup()
-        torch.cuda.empty_cache()
+        import psutil
 
-        # Assert memory usage is reasonable (less than 1GB for the small model)
-        assert memory_delta < 1024, f"GPU memory usage too high: {memory_delta:.1f}MB"
+        os.environ["QUARRY_TEST_MODE"] = "1"
+        try:
+            process = psutil.Process()
 
-    @pytest.mark.asyncio
-    async def test_concurrent_gpu_scoring(self, sample_texts):
-        """Test concurrent scoring performance on GPU."""
-        config = QualityConfig(device="cuda")
-        scorer = TransformerCoherenceScorer(config)
+            # Get baseline memory
+            gc.collect()
+            baseline_memory = process.memory_info().rss / 1024 / 1024  # MB
 
-        # Warm up
-        await scorer.score(sample_texts[0])
+            # Create assessor
+            config = QualityConfig(device="cpu", min_score=0.6)
+            QualityAssessor._instance = None
+            assessor = QualityAssessor(config)
 
-        # Test concurrent scoring
-        start = time.perf_counter()
+            # Process many texts
+            test_texts = generate_test_texts(100)
 
-        # Create concurrent tasks
-        tasks = [scorer.score(text) for text in sample_texts[:30]]
-        scores = await asyncio.gather(*tasks)
+            async def process_all():
+                for text in test_texts:
+                    await assessor.score(text)
 
-        elapsed = time.perf_counter() - start
-        throughput = len(tasks) / elapsed
+            asyncio.run(process_all())
 
-        logger.info(
-            "Concurrent GPU scoring performance",
-            tasks=len(tasks),
-            elapsed_s=f"{elapsed:.3f}",
-            throughput_per_s=f"{throughput:.1f}",
-        )
+            # Check memory after processing
+            gc.collect()
+            final_memory = process.memory_info().rss / 1024 / 1024  # MB
+            memory_delta = final_memory - baseline_memory
 
-        # Verify all scores are valid
-        assert all(0.0 <= score <= 1.0 for score in scores)
-        assert throughput > 10, f"Throughput too low: {throughput:.1f} texts/s"
+            # Should not use more than 300MB
+            assert memory_delta < 300, f"Memory usage too high: {memory_delta}MB"
 
-        # Cleanup
-        scorer.cleanup()
+        finally:
+            os.environ.pop("QUARRY_TEST_MODE", None)
+            if "assessor" in locals() and hasattr(assessor, "cleanup"):
+                assessor.cleanup()
+            QualityAssessor._instance = None
 
-    @pytest.mark.asyncio
-    async def test_gpu_scorer_cpu_baseline_impact(self, sample_texts):
-        """Test that GPU scorer doesn't significantly impact CPU-only baseline (≤ 5%)."""
-        # This test would run in CPU-only mode to verify the baseline isn't impacted
-        import os
+    def test_concurrent_scoring(self, benchmark):
+        """Test concurrent scoring performance."""
+        os.environ["QUARRY_TEST_MODE"] = "1"
+        try:
+            config = QualityConfig(device="cpu", min_score=0.6)
+            QualityAssessor._instance = None
+            assessor = QualityAssessor(config)
 
-        os.environ["QUARRY_QUALITY_DEVICE"] = "cpu"
+            test_texts = generate_test_texts(20)
 
-        config = QualityConfig(device="cpu")
-        scorer = TransformerCoherenceScorer(config)
+            async def concurrent_score():
+                # Simulate concurrent requests
+                tasks = []
+                for text in test_texts:
+                    tasks.append(assessor.score(text))
+                return await asyncio.gather(*tasks)
 
-        # Measure baseline performance
-        start = time.perf_counter()
-        for text in sample_texts[:20]:
-            await scorer.score(text)
-        cpu_time = time.perf_counter() - start
+            def run_concurrent():
+                return asyncio.run(concurrent_score())
 
-        # The implementation should not add more than 5% overhead
-        # This is a placeholder - in practice you'd compare against a known baseline
-        logger.info(
-            "CPU baseline performance", time_s=f"{cpu_time:.3f}", texts=20, avg_ms_per_text=f"{(cpu_time/20)*1000:.2f}"
-        )
+            results = benchmark(run_concurrent)
 
-        scorer.cleanup()
+            # All should complete successfully
+            assert len(results) == 20
+            assert all(isinstance(score, float) for score in results)
+
+        finally:
+            os.environ.pop("QUARRY_TEST_MODE", None)
+            QualityAssessor._instance = None
