@@ -153,10 +153,15 @@ class MockLanguageModel:
         if len(text) > 20 and text.count(" ") > 2:
             # Simple heuristic: check for Spanish words
             spanish_words = {"es", "en", "con", "español", "texto", "gramática", "este"}
+            # Simple heuristic: check for German words
+            german_words = {"ist", "ein", "der", "die", "das", "deutscher", "längerer"}
             text_lower = text.lower()
             words = set(text_lower.split())
+
             if any(word in words for word in spanish_words):
                 return (["__label__es"], [0.99])
+            elif any(word in words for word in german_words):
+                return (["__label__de"], [0.99])
             return (["__label__en"], [0.99])
         return (["__label__unknown"], [0.5])
 
