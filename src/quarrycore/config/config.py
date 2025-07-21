@@ -5,9 +5,10 @@ Configuration management for QuarryCore using Pydantic.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from pathlib import Path
-from typing import Any, ClassVar, List, Literal, Optional, cast
+from typing import Any, ClassVar, Dict, List, Literal, Optional, cast
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -328,6 +329,39 @@ class DomainConfig(BaseModel):
     technical: bool = True
 
 
+class ExtractionSettings(BaseModel):
+    """Configuration for content extraction cascade."""
+
+    cascade_order: List[str] = Field(
+        default=["trafilatura", "readability", "soup_fallback"], description="Order of extractors to try in cascade"
+    )
+    quality_threshold: float = Field(
+        default_factory=lambda: float(os.getenv("EXTRACTION_QUALITY_THRESHOLD", "0.6")),
+        ge=0.0,
+        le=1.0,
+        description="Minimum quality score to accept extracted content",
+    )
+    domain_overrides: Dict[str, List[str]] = Field(
+        default_factory=dict, description="Domain-specific extractor ordering overrides"
+    )
+
+    @field_validator("cascade_order")
+    @classmethod
+    def validate_cascade_order(cls, v: List[str]) -> List[str]:
+        """Ensure cascade order is not empty."""
+        if not v:
+            raise ValueError("cascade_order must contain at least one extractor")
+        return v
+
+    @field_validator("quality_threshold")
+    @classmethod
+    def validate_threshold(cls, v: float) -> float:
+        """Ensure quality threshold is in valid range."""
+        if not 0.0 <= v <= 1.0:
+            raise ValueError("quality_threshold must be between 0.0 and 1.0")
+        return v
+
+
 class WebUIConfig(BaseModel):
     """Configuration for the real-time web UI."""
 
@@ -380,6 +414,7 @@ class Config(BaseSettings):
     domains: DomainConfig = Field(default_factory=DomainConfig)
     monitoring: MonitoringConfig = Field(default_factory=MonitoringConfig)
     debug: DebugConfig = Field(default_factory=DebugConfig)
+    extraction: ExtractionSettings = Field(default_factory=ExtractionSettings)
 
     model_config = SettingsConfigDict(env_prefix="QUARRY_", env_nested_delimiter="__", case_sensitive=False)
 

@@ -334,6 +334,7 @@ disable_error_code = [
 
 [tool.coverage.run]
 branch = true
+parallel = true
 source = ["quarrycore"]
 omit = [
     "*/tests/*",
@@ -383,6 +384,7 @@ addopts = [
     "--verbose",
     "-ra",
     "--cov=quarrycore",
+    "--cov-branch",
     "--cov-report=term-missing",
     "--cov-report=html:htmlcov",
     "--cov-report=xml",

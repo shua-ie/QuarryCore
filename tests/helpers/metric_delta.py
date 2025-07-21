@@ -66,9 +66,7 @@ def metric_increases(metric):
 
     if actual_delta <= 0:
         raise AssertionError(
-            f"Expected metric to increase, "
-            f"but it changed by {actual_delta} "
-            f"(from {initial_value} to {final_value})"
+            f"Expected metric to increase, but it changed by {actual_delta} (from {initial_value} to {final_value})"
         )
 
 

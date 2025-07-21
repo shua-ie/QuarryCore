@@ -165,7 +165,8 @@ class TestSignalHandler:
             temp_path = Path(temp_dir)
 
             settings = PipelineSettings(
-                checkpoint_dir=temp_path / "checkpoints", checkpoint_interval=1.0  # Fast checkpoints
+                checkpoint_dir=temp_path / "checkpoints",
+                checkpoint_interval=1.0,  # Fast checkpoints
             )
 
             container = MockContainer()

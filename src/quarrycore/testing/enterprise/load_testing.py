@@ -179,7 +179,7 @@ class EnterpriseLoadTester:
         # Execute scenarios in sequence with recovery analysis
         for i, scenario in enumerate(all_scenarios):
             logger.info(
-                f"Executing scenario {i+1}/{len(all_scenarios)}: {scenario.test_type.value}",
+                f"Executing scenario {i + 1}/{len(all_scenarios)}: {scenario.test_type.value}",
                 scenario_id=str(scenario.scenario_id),
                 concurrent_users=scenario.concurrent_users,
             )
