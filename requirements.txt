@@ -97,9 +97,9 @@ multiprocess==0.70.16
 murmurhash==1.0.13
 mypy==1.16.1
 mypy_extensions==1.1.0
-networkx==3.5
+networkx==3.3
 nodeenv==1.9.1
-numpy==2.3.1
+numpy==1.24.4
 nvidia-cublas-cu12==12.6.4.1
 nvidia-cuda-cupti-cu12==12.6.80
 nvidia-cuda-nvrtc-cu12==12.6.77

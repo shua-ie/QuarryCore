@@ -1,13 +1,13 @@
 [build-system]
-requires = ["setuptools>=65.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "quarrycore"
-version = "0.1.0"
-description = "Production-grade AI training data miner with adaptive hardware optimization"
+dynamic = ["version"]
+description = "A production-grade asynchronous web content extraction and processing framework"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "Your Name", email = "josh.mcd31@gmail.com"}
 ]
@@ -32,7 +32,7 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.11,<3.12"
 dependencies = [
     # Core async and HTTP (following workflow specs)
     "httpx[http2]>=0.25.0",
