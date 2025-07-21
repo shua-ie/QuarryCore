@@ -11,12 +11,15 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 import aiosqlite
+import structlog
 from sqlalchemy import create_engine
 from sqlalchemy.schema import MetaData
 
 from quarrycore.config.config import SQLiteConfig
 
 from .schema import metadata as db_metadata
+
+logger = structlog.get_logger(__name__)
 
 # The current version of the database schema.
 # This should be incremented whenever the schema in schema.py changes.
@@ -67,7 +70,9 @@ class SQLiteManager:
         current_version = version_row[0] if version_row is not None else 0
 
         if current_version < CURRENT_SCHEMA_VERSION:
-            print(f"Database schema is out of date (v{current_version}). Migrating to v{CURRENT_SCHEMA_VERSION}...")
+            logger.info(
+                f"Database schema is out of date (v{current_version}). Migrating to v{CURRENT_SCHEMA_VERSION}..."
+            )
             # For now, we just create all tables. A real migration system would be more complex.
             db_metadata.create_all(self._engine)
 
@@ -76,7 +81,7 @@ class SQLiteManager:
 
             await conn.execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION};")
             await conn.commit()
-            print("Database migration complete.")
+            logger.info("Database migration complete.")
 
     async def _setup_fts(self, conn: aiosqlite.Connection) -> None:
         """Sets up the FTS5 table and triggers."""
@@ -136,13 +141,13 @@ class SQLiteManager:
 
     async def backup(self, backup_path: Path) -> None:
         """Performs an online backup of the database."""
-        print(f"Starting database backup to {backup_path}...")
+        logger.info(f"Starting database backup to {backup_path}...")
         backup_path.parent.mkdir(parents=True, exist_ok=True)
 
         async with self.get_connection() as conn:
             await conn.backup(sqlite3.connect(str(backup_path)))
 
-        print("Database backup complete.")
+        logger.info("Database backup complete.")
 
     async def close(self) -> None:
         """Closes all connections in the pool."""
@@ -152,7 +157,7 @@ class SQLiteManager:
 
     async def vacuum(self) -> None:
         """Rebuilds the database file, repacking it into a minimal amount of disk space."""
-        print("Starting database VACUUM operation...")
+        logger.info("Starting database VACUUM operation...")
 
         # VACUUM requires exclusive access - create a dedicated connection
         # that bypasses the connection pool to avoid conflicts
@@ -164,7 +169,7 @@ class SQLiteManager:
 
             # Now perform VACUUM with exclusive access
             await vacuum_conn.execute("VACUUM;")
-            print("Database VACUUM complete.")
+            logger.info("Database VACUUM complete.")
         finally:
             await vacuum_conn.close()
 

@@ -1,4 +1,6 @@
 """
+import structlog
+logger = structlog.get_logger(__name__)
 Multi-level deduplication orchestrator.
 
 Combines all 4 levels of deduplication:
@@ -230,9 +232,9 @@ class MultiLevelDeduplicator(DeduplicatorProtocol):
             result.confidence_score = 1.0
         else:
             # Continue with other levels if enabled
-            print(f"DEBUG: is_new=True, enable_all_levels={self.config.enable_all_levels}")
+            logger.info(f"DEBUG: is_new=True, enable_all_levels={self.config.enable_all_levels}")
             if self.config.enable_all_levels:
-                print(f"DEBUG: Calling _check_advanced_levels for {doc_id}")
+                logger.info(f"DEBUG: Calling _check_advanced_levels for {doc_id}")
                 advanced_result = await self._check_advanced_levels(doc_id, text, content_type)
                 # Merge results
                 if advanced_result.is_duplicate:
@@ -250,9 +252,9 @@ class MultiLevelDeduplicator(DeduplicatorProtocol):
 
     async def _check_advanced_levels(self, doc_id: str, text: str, content_type: str) -> DuplicationResult:
         """Check levels 2-4 for duplicates."""
-        print(f"DEBUG: In _check_advanced_levels for {doc_id}")
-        print(f"DEBUG: MinHash enabled: {self.minhash is not None}")
-        print(f"DEBUG: Fuzzy enabled: {self.fuzzy is not None}")
+        logger.info(f"DEBUG: In _check_advanced_levels for {doc_id}")
+        logger.info(f"DEBUG: MinHash enabled: {self.minhash is not None}")
+        logger.info(f"DEBUG: Fuzzy enabled: {self.fuzzy is not None}")
 
         if not self.config.enable_all_levels:
             return DuplicationResult(
@@ -263,10 +265,10 @@ class MultiLevelDeduplicator(DeduplicatorProtocol):
         # Prepare tasks for parallel execution
         tasks: List[Any] = []
 
-        print("DEBUG: About to check components")
-        print(f"DEBUG: self.minhash = {self.minhash}")
-        print(f"DEBUG: self.semantic = {self.semantic}")
-        print(f"DEBUG: self.fuzzy = {self.fuzzy}")
+        logger.info("DEBUG: About to check components")
+        logger.info(f"DEBUG: self.minhash = {self.minhash}")
+        logger.info(f"DEBUG: self.semantic = {self.semantic}")
+        logger.info(f"DEBUG: self.fuzzy = {self.fuzzy}")
 
         # Level 2: MinHash LSH
         if self.minhash is not None:
@@ -280,14 +282,14 @@ class MultiLevelDeduplicator(DeduplicatorProtocol):
         if self.fuzzy is not None:
             tasks.append(self._check_fuzzy(doc_id, text, content_type))
 
-        print(f"DEBUG: Total tasks created: {len(tasks)}")
+        logger.info(f"DEBUG: Total tasks created: {len(tasks)}")
 
         # Execute checks in parallel if configured
         if self.config.parallel_processing and tasks:
-            print(f"DEBUG: Executing {len(tasks)} tasks in parallel")
+            logger.info(f"DEBUG: Executing {len(tasks)} tasks in parallel")
             results = await asyncio.gather(*tasks)
         else:
-            print(f"DEBUG: Executing {len(tasks)} tasks sequentially")
+            logger.info(f"DEBUG: Executing {len(tasks)} tasks sequentially")
             results = []
             for task in tasks:
                 result = await task

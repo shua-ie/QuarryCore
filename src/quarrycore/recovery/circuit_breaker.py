@@ -15,6 +15,9 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Optional
 
 import aiofiles
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 
 class CircuitBreakerState(Enum):
@@ -225,7 +228,7 @@ class PersistentCircuitBreaker:
                 await f.write(json.dumps(state_data, indent=2))
         except Exception as e:
             # Log error but don't fail
-            print(f"Failed to save circuit breaker state: {e}")
+            logger.info(f"Failed to save circuit breaker state: {e}")
 
     async def _load_state(self) -> None:
         """Load circuit breaker state from file."""
@@ -252,7 +255,7 @@ class PersistentCircuitBreaker:
 
         except Exception as e:
             # Log error but continue with default state
-            print(f"Failed to load circuit breaker state: {e}")
+            logger.info(f"Failed to load circuit breaker state: {e}")
 
 
 class CircuitBreakerManager:

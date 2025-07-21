@@ -1,12 +1,31 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import TYPE_CHECKING, Dict, List
 
-import spacy
+import structlog
+
+from quarrycore.protocols import ContentMetadata, DomainType, ExtractedContent, QualityScore
+from quarrycore.quality.scorer import Scorer
+
+logger = structlog.get_logger(__name__)
 
 if TYPE_CHECKING:
-    from quarrycore.protocols import ContentMetadata, DomainType, ExtractedContent, QualityScore
+    from spacy.language import Language
+
+try:
+    import spacy
+
+    nlp = spacy.load("en_core_web_sm")
+except ImportError:
+    logger.info("Downloading spacy model 'en_core_web_sm'...")
+    import subprocess
+
+    subprocess.run(["python", "-m", "spacy", "download", "en_core_web_sm"])
+    import spacy
+
+    nlp = spacy.load("en_core_web_sm")
 
 
 class HeuristicScorer:
@@ -20,7 +39,7 @@ class HeuristicScorer:
         try:
             self.nlp = spacy.load("en_core_web_sm", disable=["parser", "lemmatizer"])
         except OSError:
-            print("Downloading spacy model 'en_core_web_sm'...")
+            logger.info("Downloading spacy model 'en_core_web_sm'...")
             spacy.cli.download("en_core_web_sm")
             self.nlp = spacy.load("en_core_web_sm", disable=["parser", "lemmatizer"])
 

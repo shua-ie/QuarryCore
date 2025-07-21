@@ -16,16 +16,7 @@ from typing import Any, AsyncGenerator, Callable, Dict, Optional
 from uuid import uuid4
 
 import psutil
-
-try:
-    import pynvml  # type: ignore[import-not-found]
-
-    HAS_PYNVML = True
-    pynvml.nvmlInit()
-except ImportError:
-    pynvml = None
-    HAS_PYNVML = False
-
+import structlog
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -38,6 +29,17 @@ from quarrycore.observability.metrics import METRICS
 from quarrycore.protocols import SystemMetrics
 from quarrycore.security import ProductionRateLimiter, RateLimitMiddleware, SecurityHeadersMiddleware
 
+logger = structlog.get_logger(__name__)
+
+try:
+    import pynvml  # type: ignore[import-not-found]
+
+    HAS_PYNVML = True
+    pynvml.nvmlInit()
+except ImportError:
+    pynvml = None
+    HAS_PYNVML = False
+
 # Initialize dependencies
 business_metrics = register_business_metrics()
 audit_logger = AuditLogger()
@@ -49,13 +51,13 @@ tracer = init_tracing(service_name="quarrycore-web")
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage application lifecycle."""
     # Startup
-    print("Starting QuarryCore Web Dashboard...")
+    logger.info("Starting QuarryCore Web Dashboard...")
     business_metrics.set_system_info(version="0.1.0", service="quarrycore-web", environment="production")
 
     yield
 
     # Shutdown
-    print("Shutting down QuarryCore Web Dashboard...")
+    logger.info("Shutting down QuarryCore Web Dashboard...")
     if pynvml:
         pynvml.nvmlShutdown()
 
@@ -173,9 +175,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             await websocket.send_json(asdict(metrics))
             await asyncio.sleep(1)  # Update interval
     except WebSocketDisconnect:
-        print(f"Client {client_ip} disconnected from metrics websocket")
+        logger.info(f"Client {client_ip} disconnected from metrics websocket")
     except Exception as e:
-        print(f"Error in metrics websocket: {e}")
+        logger.info(f"Error in metrics websocket: {e}")
 
 
 @app.get("/health")
@@ -363,6 +365,6 @@ def run_web_server(host: str = "127.0.0.1", port: int = 8000) -> None:
     """Function to run the FastAPI server."""
     import uvicorn
 
-    print(f"Starting QuarryCore Web UI at http://{host}:{port}")
+    logger.info(f"Starting QuarryCore Web UI at http://{host}:{port}")
     app.state.start_time = time.time()
     uvicorn.run(app, host=host, port=port)
