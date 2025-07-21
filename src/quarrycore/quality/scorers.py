@@ -129,7 +129,8 @@ class LanguageScorer:
                 return Score(self.name, 0.0)
 
             if isinstance(self._lid, MockLanguageModel):
-                lang = self._lid.predict(clean_text)
+                predictions = self._lid.predict(clean_text)
+                lang = predictions[0][0].split("__")[-1] if predictions[0] else "unk"
             else:
                 # FastText prediction
                 predictions = self._lid.predict(clean_text, k=1)
@@ -150,6 +151,11 @@ class MockLanguageModel:
     def predict(self, text: str, k=1):
         """Mock prediction - returns English for reasonable text."""
         if len(text) > 20 and text.count(" ") > 2:
+            # Simple heuristic: check for Spanish words
+            spanish_words = {"es", "en", "con", "español", "texto", "gramática"}
+            text_lower = text.lower()
+            if any(word in text_lower for word in spanish_words):
+                return (["__label__es"], [0.99])
             return (["__label__en"], [0.99])
         return (["__label__unknown"], [0.5])
 
